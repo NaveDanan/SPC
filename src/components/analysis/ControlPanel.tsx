@@ -123,6 +123,38 @@ const ControlPanel: React.FC = () => {
               Show Center Line
             </label>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+            <label className="inline-flex items-center text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                checked={chartOptions.showSigma1}
+                onChange={(e) => setChartOptions({ ...chartOptions, showSigma1: e.target.checked })}
+                disabled={!isDataLoaded}
+              />
+              Show ±1σ
+            </label>
+            <label className="inline-flex items-center text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                checked={chartOptions.showSigma2}
+                onChange={(e) => setChartOptions({ ...chartOptions, showSigma2: e.target.checked })}
+                disabled={!isDataLoaded}
+              />
+              Show ±2σ
+            </label>
+            <label className="inline-flex items-center text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                checked={chartOptions.showSigma3}
+                onChange={(e) => setChartOptions({ ...chartOptions, showSigma3: e.target.checked })}
+                disabled={!isDataLoaded}
+              />
+              Show ±3σ
+            </label>
+          </div>
           
           <div className="flex items-center">
             <input

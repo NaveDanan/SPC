@@ -35,7 +35,7 @@ const IndividualChart: React.FC = () => {
   }
 
   const selectedColumn = selectedColumns[0];
-  const xColumn = selectedColumns[1];
+  const { xAxisColumn: xColumn } = useAppContext();
   const data = processedData.data;
   const { ucl, lcl, centerLine, sigma } = processedData.controlLimits;
   const { ruleViolations } = processedData;
@@ -47,9 +47,11 @@ const IndividualChart: React.FC = () => {
 
   const values = data.map(row => parseFloat(row[selectedColumn]));
 
+  const defaultPointColor = 'rgba(54, 162, 235, 0.8)';
   const pointBackgroundColors = values.map((_, index) => {
+    if (!chartOptions.showRuleViolations) return defaultPointColor;
     const hasViolation = ruleViolations.some(v => v.index === index);
-    return hasViolation ? 'red' : 'rgba(54, 162, 235, 0.8)';
+    return hasViolation ? 'red' : defaultPointColor;
   });
 
   const iData = {
@@ -75,29 +77,11 @@ const IndividualChart: React.FC = () => {
           fill: false,
         }
       ] : []),
-      ...(chartOptions.showControlLimits ? [
-        {
-          label: '+3σ (UCL)',
-          data: Array(values.length).fill(ucl),
-          borderColor: 'rgba(255, 99, 132, 0.8)',
-          borderDash: [5, 5],
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: false,
-        },
-        {
-          label: '+2σ',
-          data: Array(values.length).fill(centerLine + 2 * sigma),
-          borderColor: 'rgba(255, 159, 64, 0.5)',
-          borderDash: [3, 3],
-          borderWidth: 1,
-          pointRadius: 0,
-          fill: false,
-        },
+      ...(chartOptions.showSigma1 ? [
         {
           label: '+1σ',
           data: Array(values.length).fill(centerLine + sigma),
-          borderColor: 'rgba(255, 205, 86, 0.5)',
+          borderColor: 'rgba(255, 205, 86, 0.6)',
           borderDash: [2, 2],
           borderWidth: 1,
           pointRadius: 0,
@@ -106,8 +90,19 @@ const IndividualChart: React.FC = () => {
         {
           label: '-1σ',
           data: Array(values.length).fill(centerLine - sigma),
-          borderColor: 'rgba(255, 205, 86, 0.5)',
+          borderColor: 'rgba(255, 205, 86, 0.6)',
           borderDash: [2, 2],
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: false,
+        },
+      ] : []),
+      ...(chartOptions.showSigma2 ? [
+        {
+          label: '+2σ',
+          data: Array(values.length).fill(centerLine + 2 * sigma),
+          borderColor: 'rgba(255, 159, 64, 0.6)',
+          borderDash: [3, 3],
           borderWidth: 1,
           pointRadius: 0,
           fill: false,
@@ -115,16 +110,27 @@ const IndividualChart: React.FC = () => {
         {
           label: '-2σ',
           data: Array(values.length).fill(centerLine - 2 * sigma),
-          borderColor: 'rgba(255, 159, 64, 0.5)',
+          borderColor: 'rgba(255, 159, 64, 0.6)',
           borderDash: [3, 3],
           borderWidth: 1,
+          pointRadius: 0,
+          fill: false,
+        },
+      ] : []),
+      ...((chartOptions.showControlLimits || chartOptions.showSigma3) ? [
+        {
+          label: '+3σ (UCL)',
+          data: Array(values.length).fill(ucl),
+          borderColor: 'rgba(255, 99, 132, 0.9)',
+          borderDash: [5, 5],
+          borderWidth: 2,
           pointRadius: 0,
           fill: false,
         },
         {
           label: '-3σ (LCL)',
           data: Array(values.length).fill(lcl),
-          borderColor: 'rgba(255, 99, 132, 0.8)',
+          borderColor: 'rgba(255, 99, 132, 0.9)',
           borderDash: [5, 5],
           borderWidth: 2,
           pointRadius: 0,
@@ -144,7 +150,7 @@ const IndividualChart: React.FC = () => {
         callbacks: {
           label: (context) => {
             const index = context.dataIndex;
-            const hasViolation = ruleViolations.some(v => v.index === index);
+            const hasViolation = chartOptions.showRuleViolations && ruleViolations.some(v => v.index === index);
             const labels = [`${context.dataset.label}: ${context.parsed.y.toFixed(2)}`];
             if (hasViolation) {
               const violations = ruleViolations.filter(v => v.index === index);

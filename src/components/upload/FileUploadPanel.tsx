@@ -5,7 +5,7 @@ import { useAppContext } from '../../context/AppContext';
 import { parseFile } from '../../utils/fileUtils';
 
 const FileUploadPanel: React.FC = () => {
-  const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns, sampleSize, setSampleSize } = useAppContext();
+  const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns, xAxisColumn, setXAxisColumn, sampleSize, setSampleSize } = useAppContext();
   const [isUploading, setIsUploading] = useState(false);
   
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -98,8 +98,7 @@ const FileUploadPanel: React.FC = () => {
               className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               value={selectedColumns[0] || ''}
               onChange={(e) => {
-                const next = selectedColumns[1] ? [e.target.value, selectedColumns[1]] : [e.target.value];
-                setSelectedColumns(next);
+                setSelectedColumns([e.target.value, ...selectedColumns.slice(1).filter(() => false)]);
               }}
             >
               {rawData.headers.map((header) => (
@@ -117,15 +116,10 @@ const FileUploadPanel: React.FC = () => {
             <select
               id="x-axis-column"
               className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              value={selectedColumns[1] || ''}
+              value={xAxisColumn || ''}
               onChange={(e) => {
-                const y = selectedColumns[0] || rawData.headers[0];
                 const x = e.target.value;
-                if (!x) {
-                  setSelectedColumns([y]);
-                } else {
-                  setSelectedColumns([y, x]);
-                }
+                setXAxisColumn(x || null);
               }}
             >
               <option value="">— Use row index —</option>

@@ -66,6 +66,9 @@ export interface ChartOptions {
   showCenterLine: boolean;
   showRuleViolations: boolean;
   colorScheme: string;
+  showSigma1?: boolean;
+  showSigma2?: boolean;
+  showSigma3?: boolean;
 }
 
 export interface ChartCustomization {

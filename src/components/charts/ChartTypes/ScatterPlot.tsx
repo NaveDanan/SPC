@@ -21,14 +21,15 @@ const ScatterPlot: React.FC = () => {
   }
   
   const primaryColumn = selectedColumns[0];
+  const { xAxisColumn } = useAppContext();
   const data = processedData.data;
   
   // For a scatter plot, we need x and y values
   // If only one column is selected, use indices as x values
   // If two columns are selected, use the second column as x values
   
-  const hasSecondaryColumn = selectedColumns.length > 1;
-  const secondaryColumn = hasSecondaryColumn ? selectedColumns[1] : null;
+  const hasSecondaryColumn = !!xAxisColumn;
+  const secondaryColumn = xAxisColumn ? xAxisColumn : null;
   
   // Extract data points
   const dataPoints = data.map((row, index) => {

@@ -13,7 +13,7 @@ interface Selection {
 }
 
 const DataPreview: React.FC = () => {
-  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns } = useAppContext();
+  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, sampleSize, xAxisColumn, setXAxisColumn } = useAppContext();
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [isSelecting, setIsSelecting] = useState(false); // mouse drag selecting
@@ -644,8 +644,13 @@ const DataPreview: React.FC = () => {
         <div className="flex items-center gap-3 ml-auto text-xs">
           {selectedColumns?.length > 0 && (
             <div className="flex items-center gap-2 mr-2">
-              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">Y: {selectedColumns[0]}</span>
-              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">X: {selectedColumns[1] || 'Index'}</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">Y: {Array.isArray(selectedColumns) ? (selectedColumns.join(', ')) : selectedColumns}</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">X: {xAxisColumn || 'Index'}</span>
+            </div>
+          )}
+          {(selectedChartType === 'xBarS' || selectedChartType === 'xBarR') && (
+            <div className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+              X-bar mode: select {sampleSize} Y columns ({(selectedColumns || []).length}/{sampleSize})
             </div>
           )}
         </div>
@@ -704,8 +709,8 @@ const DataPreview: React.FC = () => {
               <th className="w-10 border border-gray-200 bg-gray-100 text-center text-xs font-medium text-gray-600">#</th>
               {headers.map((header, colIndex) => {
                 const sorting = sortState && sortState.col === colIndex ? sortState.dir : null;
-                const isY = selectedColumns && selectedColumns[0] === header;
-                const isX = selectedColumns && selectedColumns[1] === header;
+                const isY = selectedColumns && selectedColumns.includes(header);
+                const isX = xAxisColumn === header;
                 return (
                   <th
                     key={header + colIndex}
@@ -748,23 +753,35 @@ const DataPreview: React.FC = () => {
                     <div className="mt-1 flex items-center justify-center gap-1">
                       <button
                         className={`px-1 py-0.5 rounded text-[10px] border ${isY ? 'bg-emerald-200 border-emerald-400 text-emerald-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
-                        title="Use as Y (values)"
+                        title={selectedChartType === 'xBarS' || selectedChartType === 'xBarR' ? `Toggle Y column (need ${sampleSize})` : 'Use as Y (values)'}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const x = selectedColumns?.[1];
-                          // If selecting same as X, keep both allowed
-                          setSelectedColumns([header, x]);
+                          if (selectedChartType === 'xBarS' || selectedChartType === 'xBarR') {
+                            const exists = selectedColumns?.includes(header);
+                            if (exists) {
+                              setSelectedColumns(selectedColumns.filter(h => h !== header));
+                            } else {
+                              const currentCount = (selectedColumns || []).length;
+                              if (currentCount >= sampleSize) {
+                                alert(`You can select up to ${sampleSize} columns for the current sample size.`);
+                              } else {
+                                setSelectedColumns([...(selectedColumns || []), header]);
+                              }
+                            }
+                          } else {
+                            setSelectedColumns([header]);
+                          }
                         }}
                       >
                         Y
                       </button>
                       <button
-                        className={`px-1 py-0.5 rounded text-[10px] border ${isX ? 'bg-amber-200 border-amber-400 text-amber-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
-                        title="Use as X (axis)"
+                        className={`px-1 py-0.5 rounded text-[10px] border ${isX ? 'bg-amber-200 border-amber-400 text-amber-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'} ${selectedChartType === 'xBarS' || selectedChartType === 'xBarR' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        title={selectedChartType === 'xBarS' || selectedChartType === 'xBarR' ? 'X-axis selection disabled for X-bar charts' : 'Use as X (axis)'}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const y = selectedColumns?.[0] || header;
-                          setSelectedColumns([y, header]);
+                          if (selectedChartType === 'xBarS' || selectedChartType === 'xBarR') return;
+                          setXAxisColumn(header);
                         }}
                       >
                         X
@@ -799,8 +816,8 @@ const DataPreview: React.FC = () => {
                 {headers.map((header, colIndex) => {
                   const selected = isCellSelected(rowIndex, colIndex);
                   const value = row[header] ?? '';
-                  const isY = selectedColumns && selectedColumns[0] === header;
-                  const isX = selectedColumns && selectedColumns[1] === header;
+                  const isY = selectedColumns && selectedColumns.includes(header);
+                  const isX = xAxisColumn === header;
                   return (
                     <td
                       key={`${rowIndex}-${colIndex}`}

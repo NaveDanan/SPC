@@ -21,6 +21,8 @@ interface AppContextType {
   isProcessing: boolean;
   selectedColumns: string[];
   setSelectedColumns: (columns: string[]) => void;
+  xAxisColumn: string | null;
+  setXAxisColumn: (col: string | null) => void;
   sampleSize: number;
   setSampleSize: (size: number) => void;
   errorMessage: string | null;
@@ -36,6 +38,9 @@ const defaultChartOptions: ChartOptions = {
   showCenterLine: true,
   showRuleViolations: true,
   colorScheme: 'default',
+  showSigma1: true,
+  showSigma2: true,
+  showSigma3: true,
 };
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -47,6 +52,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
   const [chartOptions, setChartOptions] = useState<ChartOptions>(defaultChartOptions);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [xAxisColumn, setXAxisColumn] = useState<string | null>(null);
   const [sampleSize, setSampleSize] = useState<number>(5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -196,6 +202,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     isProcessing,
     selectedColumns,
     setSelectedColumns,
+    xAxisColumn,
+    setXAxisColumn,
     sampleSize,
     setSampleSize,
     errorMessage,
