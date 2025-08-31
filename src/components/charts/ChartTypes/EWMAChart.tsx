@@ -22,12 +22,15 @@ const EWMAChart: React.FC = () => {
   }
   
   const selectedColumn = selectedColumns[0];
+  const xColumn = selectedColumns[1];
   const data = processedData.data;
   const { ucl, lcl, centerLine } = processedData.controlLimits;
   const { ruleViolations } = processedData;
   
-  // Create labels for the X axis
-  const labels = data.map((_, index) => `${index + 1}`);
+  // Create labels for the X axis (index or chosen X column)
+  const labels = xColumn
+    ? data.map((row) => String(row[xColumn] ?? ''))
+    : data.map((_, index) => `${index + 1}`);
   
   // Extract data values
   const values = data.map(row => parseFloat(row[selectedColumn]));

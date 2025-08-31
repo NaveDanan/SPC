@@ -13,7 +13,7 @@ interface Selection {
 }
 
 const DataPreview: React.FC = () => {
-  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet } = useAppContext();
+  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns } = useAppContext();
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [isSelecting, setIsSelecting] = useState(false); // mouse drag selecting
@@ -400,7 +400,15 @@ const DataPreview: React.FC = () => {
             <Trash2 size={14} /> Rows
           </button>
         </div>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-3 ml-auto text-xs">
+          {selectedColumns?.length > 0 && (
+            <div className="flex items-center gap-2 mr-2">
+              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">Y: {selectedColumns[0]}</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">X: {selectedColumns[1] || 'Index'}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 ml-2">
           {unsavedChanges && <span className="text-xs text-amber-600">Unsaved changes</span>}
           <button onClick={commitChanges} disabled={!unsavedChanges} className="px-2 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-40 flex items-center gap-1" title="Apply changes to dataset">
             <Check size={14} /> Apply
@@ -449,11 +457,13 @@ const DataPreview: React.FC = () => {
               <th className="w-10 border border-gray-200 bg-gray-100 text-center text-xs font-medium text-gray-600">#</th>
               {headers.map((header, colIndex) => {
                 const sorting = sortState && sortState.col === colIndex ? sortState.dir : null;
+                const isY = selectedColumns && selectedColumns[0] === header;
+                const isX = selectedColumns && selectedColumns[1] === header;
                 return (
                   <th
                     key={header + colIndex}
                     style={{ width: columnWidths[colIndex] }}
-                    className={`relative border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 align-middle cursor-pointer hover:bg-blue-50 ${selection && selection.start.col === colIndex && selection.end.col === colIndex ? 'bg-blue-100' : ''}`}
+                    className={`relative border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-700 align-middle cursor-pointer hover:bg-blue-50 ${selection && selection.start.col === colIndex && selection.end.col === colIndex ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       sortByColumn(colIndex);
@@ -481,6 +491,32 @@ const DataPreview: React.FC = () => {
                         </span>
                       </div>
                     )}
+                    {/* X/Y selectors */}
+                    <div className="mt-1 flex items-center justify-center gap-1">
+                      <button
+                        className={`px-1 py-0.5 rounded text-[10px] border ${isY ? 'bg-emerald-200 border-emerald-400 text-emerald-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
+                        title="Use as Y (values)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const x = selectedColumns?.[1];
+                          // If selecting same as X, keep both allowed
+                          setSelectedColumns([header, x]);
+                        }}
+                      >
+                        Y
+                      </button>
+                      <button
+                        className={`px-1 py-0.5 rounded text-[10px] border ${isX ? 'bg-amber-200 border-amber-400 text-amber-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
+                        title="Use as X (axis)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const y = selectedColumns?.[0] || header;
+                          setSelectedColumns([y, header]);
+                        }}
+                      >
+                        X
+                      </button>
+                    </div>
                     <span
                       onMouseDown={(e) => onResizeMouseDown(e, colIndex)}
                       className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-blue-400"
@@ -504,11 +540,13 @@ const DataPreview: React.FC = () => {
                 {headers.map((header, colIndex) => {
                   const selected = isCellSelected(rowIndex, colIndex);
                   const value = row[header] ?? '';
+                  const isY = selectedColumns && selectedColumns[0] === header;
+                  const isX = selectedColumns && selectedColumns[1] === header;
                   return (
                     <td
                       key={`${rowIndex}-${colIndex}`}
                       style={{ width: columnWidths[colIndex] }}
-                      className={`border border-gray-200 px-2 py-1 text-xs whitespace-nowrap ${selected ? 'bg-blue-100' : 'bg-white'} ${editingCell?.row === rowIndex && editingCell?.col === colIndex ? 'p-0' : ''}`}
+                      className={`border border-gray-200 px-2 py-1 text-xs whitespace-nowrap ${selected ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'} ${editingCell?.row === rowIndex && editingCell?.col === colIndex ? 'p-0' : ''}`}
                       onMouseDown={() => beginSelection(rowIndex, colIndex)}
                       onMouseMove={() => extendSelection(rowIndex, colIndex)}
                       onMouseUp={endSelection}
