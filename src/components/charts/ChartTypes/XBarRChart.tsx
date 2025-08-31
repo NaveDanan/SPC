@@ -87,6 +87,7 @@ const XBarRChart: React.FC = () => {
         data: subgroupMeans,
         borderColor: 'rgba(54, 162, 235, 0.9)',
         backgroundColor: xbarPointColors,
+        pointBackgroundColor: xbarPointColors,
         pointRadius: 3,
         pointHoverRadius: 5,
         tension: 0.1,
@@ -127,6 +128,10 @@ const XBarRChart: React.FC = () => {
         data: subgroupRanges,
         borderColor: 'rgba(255, 159, 64, 0.9)',
         backgroundColor: subgroupRanges.map(v => {
+          if (!chartOptions.showRuleViolations) return 'rgba(255, 159, 64, 0.9)';
+          return (v > rChartLimits.ucl || v < rChartLimits.lcl) ? 'red' : 'rgba(255, 159, 64, 0.9)';
+        }),
+        pointBackgroundColor: subgroupRanges.map(v => {
           if (!chartOptions.showRuleViolations) return 'rgba(255, 159, 64, 0.9)';
           return (v > rChartLimits.ucl || v < rChartLimits.lcl) ? 'red' : 'rgba(255, 159, 64, 0.9)';
         }),
