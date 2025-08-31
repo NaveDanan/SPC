@@ -132,6 +132,37 @@ export const chartMeta: Record<ChartType, ChartMeta> = {
       }
     ]
   },
+  xBarR: {
+    name: 'X-bar R Chart',
+    description: 'Monitors the subgroup mean (X-bar) and the subgroup range (R) for continuous data with small subgroup sizes (typically 2–10). Preferred when only a few observations per subgroup are available.',
+    strengths: [
+      'Efficient for small subgroup sizes using range as variability proxy',
+      'Simple to compute and explain on the shop floor',
+      'Separates mean (X-bar) and short-term spread (R) monitoring'
+    ],
+    weaknesses: [
+      'Less statistically efficient than S-based charts for larger n',
+      'Range is sensitive to outliers within a subgroup',
+      'Requires rational subgrouping; mixing tools/conditions reduces sensitivity'
+    ],
+    dataExpectations: [
+      'Continuous measurements with small, fixed subgroup size (e.g., n = 3–5)',
+      'Subgroups formed so within-subgroup variation represents short-term noise',
+      'Enough subgroups over time to establish stable baseline limits'
+    ],
+    exampleUseCases: [
+      {
+        title: 'Etch Depth — 3 Sites per Wafer',
+        scenario: 'Measure etch depth at three standard metrology sites per wafer and subgroup by wafer/run.',
+        whyUseful: 'Tracks drift in mean etch depth while monitoring short-term spread via range when n is small.'
+      },
+      {
+        title: 'Critical Dimension — 5 Dice per Lot',
+        scenario: 'Sample five devices per lot for line width; chart subgroup means and ranges lot by lot.',
+        whyUseful: 'Detects both centering shifts and sudden increases in within-lot variability with minimal sampling.'
+      }
+    ]
+  },
   ewma: {
     name: 'EWMA Chart',
     description: 'Exponentially Weighted Moving Average chart emphasizes recent data while retaining historical context to detect small persistent shifts sooner than Shewhart charts.',

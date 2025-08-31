@@ -1,18 +1,40 @@
 import jStat from 'jstat';
 import { ControlLimits, ChartType, DataPoint } from '../types/DataTypes';
 
-// Constants for control charts based on sample size
+// Helper to compute B3/B4 from c4
+const computeB3B4 = (c4: number) => {
+  const k = (3 / c4) * Math.sqrt(Math.max(0, 1 - c4 * c4));
+  const b3 = Math.max(0, 1 - k);
+  const b4 = 1 + k;
+  return { b3, b4 };
+};
+
+// Constants for control charts based on sample size (n = 2..25)
 const controlChartConstants: Record<number, any> = {
-  2: { a2: 1.880, a3: 2.659, c4: 0.7979, b3: 0, b4: 3.267, d2: 1.128, d3: 0, d4: 3.267 },
-  3: { a2: 1.023, a3: 1.954, c4: 0.8862, b3: 0, b4: 2.568, d2: 1.693, d3: 0, d4: 2.574 },
-  4: { a2: 0.729, a3: 1.628, c4: 0.9213, b3: 0, b4: 2.266, d2: 2.059, d3: 0, d4: 2.282 },
-  5: { a2: 0.577, a3: 1.427, c4: 0.9400, b3: 0, b4: 2.089, d2: 2.326, d3: 0, d4: 2.114 },
-  6: { a2: 0.483, a3: 1.287, c4: 0.9515, b3: 0.030, b4: 1.970, d2: 2.534, d3: 0, d4: 2.004 },
-  7: { a2: 0.419, a3: 1.182, c4: 0.9594, b3: 0.118, b4: 1.882, d2: 2.704, d3: 0.076, d4: 1.924 },
-  8: { a2: 0.373, a3: 1.099, c4: 0.9650, b3: 0.185, b4: 1.815, d2: 2.847, d3: 0.136, d4: 1.864 },
-  9: { a2: 0.337, a3: 1.032, c4: 0.9693, b3: 0.239, b4: 1.761, d2: 2.970, d3: 0.184, d4: 1.816 },
-  10: { a2: 0.308, a3: 0.975, c4: 0.9727, b3: 0.284, b4: 1.716, d2: 3.078, d3: 0.223, d4: 1.777 },
-  // Add more constants for larger sample sizes if needed
+  2: { a2: 1.880, a3: 2.659, c4: 0.7979, ...computeB3B4(0.7979), d2: 1.128, d3: 0, d4: 3.267 },
+  3: { a2: 1.023, a3: 1.954, c4: 0.8862, ...computeB3B4(0.8862), d2: 1.693, d3: 0, d4: 2.574 },
+  4: { a2: 0.729, a3: 1.628, c4: 0.9213, ...computeB3B4(0.9213), d2: 2.059, d3: 0, d4: 2.282 },
+  5: { a2: 0.577, a3: 1.427, c4: 0.9400, ...computeB3B4(0.9400), d2: 2.326, d3: 0, d4: 2.114 },
+  6: { a2: 0.483, a3: 1.287, c4: 0.9515, ...computeB3B4(0.9515), d2: 2.534, d3: 0, d4: 2.004 },
+  7: { a2: 0.419, a3: 1.182, c4: 0.9594, ...computeB3B4(0.9594), d2: 2.704, d3: 0.076, d4: 1.924 },
+  8: { a2: 0.373, a3: 1.099, c4: 0.9650, ...computeB3B4(0.9650), d2: 2.847, d3: 0.136, d4: 1.864 },
+  9: { a2: 0.337, a3: 1.032, c4: 0.9693, ...computeB3B4(0.9693), d2: 2.970, d3: 0.184, d4: 1.816 },
+  10: { a2: 0.308, a3: 0.975, c4: 0.9727, ...computeB3B4(0.9727), d2: 3.078, d3: 0.223, d4: 1.777 },
+  11: { a2: 0.285, a3: 0.927, c4: 0.9754, ...computeB3B4(0.9754), d2: 3.173, d3: 0.256, d4: 1.744 },
+  12: { a2: 0.266, a3: 0.886, c4: 0.9776, ...computeB3B4(0.9776), d2: 3.258, d3: 0.283, d4: 1.717 },
+  13: { a2: 0.249, a3: 0.850, c4: 0.9794, ...computeB3B4(0.9794), d2: 3.336, d3: 0.307, d4: 1.693 },
+  14: { a2: 0.235, a3: 0.817, c4: 0.9810, ...computeB3B4(0.9810), d2: 3.407, d3: 0.328, d4: 1.672 },
+  15: { a2: 0.223, a3: 0.789, c4: 0.9823, ...computeB3B4(0.9823), d2: 3.472, d3: 0.347, d4: 1.653 },
+  16: { a2: 0.212, a3: 0.763, c4: 0.9835, ...computeB3B4(0.9835), d2: 3.532, d3: 0.363, d4: 1.637 },
+  17: { a2: 0.203, a3: 0.739, c4: 0.9845, ...computeB3B4(0.9845), d2: 3.588, d3: 0.378, d4: 1.622 },
+  18: { a2: 0.194, a3: 0.718, c4: 0.9854, ...computeB3B4(0.9854), d2: 3.640, d3: 0.391, d4: 1.608 },
+  19: { a2: 0.187, a3: 0.698, c4: 0.9862, ...computeB3B4(0.9862), d2: 3.689, d3: 0.403, d4: 1.597 },
+  20: { a2: 0.180, a3: 0.680, c4: 0.9869, ...computeB3B4(0.9869), d2: 3.735, d3: 0.415, d4: 1.585 },
+  21: { a2: 0.173, a3: 0.663, c4: 0.9876, ...computeB3B4(0.9876), d2: 3.778, d3: 0.425, d4: 1.575 },
+  22: { a2: 0.167, a3: 0.647, c4: 0.9882, ...computeB3B4(0.9882), d2: 3.819, d3: 0.434, d4: 1.566 },
+  23: { a2: 0.162, a3: 0.633, c4: 0.9887, ...computeB3B4(0.9887), d2: 3.858, d3: 0.443, d4: 1.557 },
+  24: { a2: 0.157, a3: 0.619, c4: 0.9892, ...computeB3B4(0.9892), d2: 3.895, d3: 0.451, d4: 1.548 },
+  25: { a2: 0.153, a3: 0.606, c4: 0.9896, ...computeB3B4(0.9896), d2: 3.931, d3: 0.459, d4: 1.541 },
 };
 
 // Get control chart constants based on sample size
@@ -100,6 +122,64 @@ export const calculateXbarSChartLimits = (
   };
 };
 
+// Compute components for X-bar S: subgroup arrays and both chart limits
+export const computeXbarSComponents = (values: number[], sampleSize: number) => {
+  const subgroups: number[][] = [];
+  for (let i = 0; i < values.length; i += sampleSize) {
+    const g = values.slice(i, i + sampleSize);
+    if (g.length === sampleSize) subgroups.push(g);
+  }
+  const subgroupMeans = subgroups.map(g => calculateMean(g));
+  const subgroupStdDevs = subgroups.map(g => calculateStandardDeviation(g));
+  const constants = getControlChartConstants(sampleSize);
+  const xBar = calculateMean(subgroupMeans);
+  const sBar = calculateMean(subgroupStdDevs);
+  return {
+    subgroupMeans,
+    subgroupStdDevs,
+    xbarLimits: {
+      ucl: xBar + constants.a3 * sBar,
+      lcl: xBar - constants.a3 * sBar,
+      centerLine: xBar,
+    },
+    sChartLimits: {
+      ucl: constants.b4 * sBar,
+      lcl: Math.max(0, constants.b3 * sBar),
+      centerLine: sBar,
+    },
+    sigmaEstimate: sBar / constants.c4,
+  };
+};
+
+// Compute components for X-bar R: subgroup arrays and both chart limits
+export const computeXbarRComponents = (values: number[], sampleSize: number) => {
+  const subgroups: number[][] = [];
+  for (let i = 0; i < values.length; i += sampleSize) {
+    const g = values.slice(i, i + sampleSize);
+    if (g.length === sampleSize) subgroups.push(g);
+  }
+  const subgroupMeans = subgroups.map(g => calculateMean(g));
+  const subgroupRanges = subgroups.map(g => Math.max(...g) - Math.min(...g));
+  const constants = getControlChartConstants(sampleSize);
+  const xBar = calculateMean(subgroupMeans);
+  const rBar = calculateMean(subgroupRanges);
+  return {
+    subgroupMeans,
+    subgroupRanges,
+    xbarLimits: {
+      ucl: xBar + constants.a2 * rBar,
+      lcl: xBar - constants.a2 * rBar,
+      centerLine: xBar,
+    },
+    rChartLimits: {
+      ucl: constants.d4 * rBar,
+      lcl: Math.max(0, constants.d3 * rBar),
+      centerLine: rBar,
+    },
+    sigmaEstimate: rBar / constants.d2,
+  };
+};
+
 // Calculate control limits for EWMA Chart
 export const calculateEWMALimits = (data: number[], lambda = 0.2): ControlLimits => {
   const mean = calculateMean(data);
@@ -184,6 +264,27 @@ export const calculateControlLimits = (
       const subgroupStdDevs = subgroups.map(group => calculateStandardDeviation(group));
       
       return calculateXbarSChartLimits(subgroupMeans, subgroupStdDevs, sampleSize);
+    }
+
+    case 'xBarR': {
+      // Group data into subgroups
+      const subgroups: number[][] = [];
+      for (let i = 0; i < numericData.length; i += sampleSize) {
+        const subgroup = numericData.slice(i, i + sampleSize);
+        if (subgroup.length === sampleSize) subgroups.push(subgroup);
+      }
+      const subgroupMeans = subgroups.map(group => calculateMean(group));
+      const subgroupRanges = subgroups.map(group => Math.max(...group) - Math.min(...group));
+      const constants = getControlChartConstants(sampleSize);
+      const xBar = calculateMean(subgroupMeans);
+      const rBar = calculateMean(subgroupRanges);
+      return {
+        ucl: xBar + constants.a2 * rBar,
+        lcl: xBar - constants.a2 * rBar,
+        centerLine: xBar,
+        sigma: rBar / constants.d2,
+        constants,
+      };
     }
     
     case 'ewma':

@@ -1,4 +1,4 @@
-export type ChartType = 'individual' | 'pChart' | 'npChart' | 'xBarS' | 'ewma' | 'histogram' | 'scatterPlot';
+export type ChartType = 'individual' | 'pChart' | 'npChart' | 'xBarS' | 'xBarR' | 'ewma' | 'histogram' | 'scatterPlot';
 
 export interface DataPoint {
   [key: string]: any;

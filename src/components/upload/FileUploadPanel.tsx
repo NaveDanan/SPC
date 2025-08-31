@@ -140,19 +140,19 @@ const FileUploadPanel: React.FC = () => {
           
           <div>
             <label htmlFor="sample-size" className="block text-sm font-medium text-gray-700 mb-1">
-              Sample Size (for X-bar S Chart)
+              Sample Size (for X-bar charts)
             </label>
             <input
               id="sample-size"
               type="number"
               min={2}
-              max={10}
+              max={25}
               className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               value={sampleSize}
-              onChange={(e) => setSampleSize(Math.max(2, Math.min(10, parseInt(e.target.value) || 5)))}
+              onChange={(e) => setSampleSize(Math.max(2, Math.min(25, parseInt(e.target.value) || 5)))}
             />
             <p className="text-xs text-gray-500 mt-1">
-              For X-bar S charts, data will be grouped into subgroups of this size
+              For X-bar charts (S or R), data will be grouped into subgroups of this size
             </p>
           </div>
         </div>

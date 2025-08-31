@@ -18,6 +18,7 @@ const ControlPanel: React.FC = () => {
     { value: 'pChart', label: 'P Chart (Proportion)' },
     { value: 'npChart', label: 'NP Chart (Number of Defects)' },
     { value: 'xBarS', label: 'X-bar S Chart' },
+    { value: 'xBarR', label: 'X-bar R Chart' },
     { value: 'ewma', label: 'EWMA Chart' },
     { value: 'histogram', label: 'Histogram' },
     { value: 'scatterPlot', label: 'Scatter Plot' },

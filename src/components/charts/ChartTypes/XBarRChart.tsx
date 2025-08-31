@@ -12,19 +12,29 @@ import {
   ChartOptions,
 } from 'chart.js';
 import { useAppContext } from '../../../context/AppContext';
-import { computeXbarSComponents } from '../../../utils/spcCalculations';
+import { computeXbarRComponents } from '../../../utils/spcCalculations';
 
-const XBarSChart: React.FC = () => {
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+);
+
+const XBarRChart: React.FC = () => {
   const { processedData, selectedColumns, chartOptions, sampleSize } = useAppContext();
-  
+
   if (!processedData || !selectedColumns.length) {
     return <div>No data available</div>;
   }
-  
+
   const selectedColumn = selectedColumns[0];
   const data = processedData.data;
   const values = data.map(row => parseFloat(row[selectedColumn]));
-  const { subgroupMeans, subgroupStdDevs, xbarLimits, sChartLimits } = computeXbarSComponents(values, sampleSize);
+  const { subgroupMeans, subgroupRanges, xbarLimits, rChartLimits } = computeXbarRComponents(values, sampleSize);
 
   const labels = subgroupMeans.map((_, index) => `${index + 1}`);
 
@@ -74,22 +84,22 @@ const XBarSChart: React.FC = () => {
     ],
   };
 
-  const sData = {
+  const rData = {
     labels,
     datasets: [
       {
-        label: 'Subgroup Std Dev (S)',
-        data: subgroupStdDevs,
-        borderColor: 'rgba(153, 102, 255, 0.9)',
-        backgroundColor: 'rgba(153, 102, 255, 0.9)',
+        label: 'Subgroup Range (R)',
+        data: subgroupRanges,
+        borderColor: 'rgba(255, 159, 64, 0.9)',
+        backgroundColor: 'rgba(255, 159, 64, 0.9)',
         pointRadius: 3,
         pointHoverRadius: 5,
         tension: 0.1,
       },
       ...(chartOptions.showCenterLine ? [
         {
-          label: 'Center Line (S̄)',
-          data: Array(subgroupStdDevs.length).fill(sChartLimits.centerLine),
+          label: 'Center Line (R̄)',
+          data: Array(subgroupRanges.length).fill(rChartLimits.centerLine),
           borderColor: 'rgba(75, 192, 192, 0.9)',
           borderDash: [6, 6],
           borderWidth: 2,
@@ -99,8 +109,8 @@ const XBarSChart: React.FC = () => {
       ] : []),
       ...(chartOptions.showControlLimits ? [
         {
-          label: 'UCL (S)',
-          data: Array(subgroupStdDevs.length).fill(sChartLimits.ucl),
+          label: 'UCL (R)',
+          data: Array(subgroupRanges.length).fill(rChartLimits.ucl),
           borderColor: 'rgba(255, 99, 132, 0.9)',
           borderDash: [5, 5],
           borderWidth: 2,
@@ -108,8 +118,8 @@ const XBarSChart: React.FC = () => {
           fill: false,
         },
         {
-          label: 'LCL (S)',
-          data: Array(subgroupStdDevs.length).fill(sChartLimits.lcl),
+          label: 'LCL (R)',
+          data: Array(subgroupRanges.length).fill(rChartLimits.lcl),
           borderColor: 'rgba(255, 99, 132, 0.9)',
           borderDash: [5, 5],
           borderWidth: 2,
@@ -124,47 +134,25 @@ const XBarSChart: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        position: 'top',
-      },
-      title: {
-        display: true,
-        text: chartOptions.title || `X-bar Chart (n=${sampleSize})`,
-        font: {
-          size: 16,
-        }
-      },
+      legend: { position: 'top' },
+      title: { display: true, text: chartOptions.title || `X-bar Chart (n=${sampleSize})`, font: { size: 16 } },
     },
     scales: {
-      x: {
-        title: {
-          display: true,
-          text: chartOptions.xAxisLabel || 'Subgroup',
-        },
-      },
-      y: {
-        title: {
-          display: true,
-          text: chartOptions.yAxisLabel || 'Subgroup Mean (X̄)',
-        },
-      },
+      x: { title: { display: true, text: chartOptions.xAxisLabel || 'Subgroup' } },
+      y: { title: { display: true, text: 'Subgroup Mean (X̄)' } },
     },
   };
 
-  const sOptions: ChartOptions<'line'> = {
+  const rOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { position: 'top' },
-      title: {
-        display: true,
-        text: `S Chart (n=${sampleSize})`,
-        font: { size: 16 },
-      },
+      title: { display: true, text: `R Chart (n=${sampleSize})`, font: { size: 16 } },
     },
     scales: {
       x: { title: { display: true, text: chartOptions.xAxisLabel || 'Subgroup' } },
-      y: { title: { display: true, text: 'Subgroup Std Dev (S)' } },
+      y: { title: { display: true, text: 'Subgroup Range (R)' } },
     },
   };
 
@@ -174,10 +162,11 @@ const XBarSChart: React.FC = () => {
         <Line data={xbarData} options={xbarOptions} />
       </div>
       <div style={{ height: '320px' }}>
-        <Line data={sData} options={sOptions} />
+        <Line data={rData} options={rOptions} />
       </div>
     </div>
   );
 };
 
-export default XBarSChart;
+export default XBarRChart;
+

@@ -4,6 +4,7 @@ import IndividualChart from './ChartTypes/IndividualChart';
 import PChart from './ChartTypes/PChart';
 import NPChart from './ChartTypes/NPChart';
 import XBarSChart from './ChartTypes/XBarSChart';
+import XBarRChart from './ChartTypes/XBarRChart';
 import EWMAChart from './ChartTypes/EWMAChart';
 import Histogram from './ChartTypes/Histogram';
 import ScatterPlot from './ChartTypes/ScatterPlot';
@@ -45,6 +46,8 @@ const ChartPanel: React.FC = () => {
         return <NPChart />;
       case 'xBarS':
         return <XBarSChart />;
+      case 'xBarR':
+        return <XBarRChart />;
       case 'ewma':
         return <EWMAChart />;
       case 'histogram':
