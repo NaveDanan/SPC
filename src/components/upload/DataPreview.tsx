@@ -641,14 +641,6 @@ const DataPreview: React.FC = () => {
           </button>
           <div className="ml-3 text-xs text-gray-600 min-w-[120px]">{selection && `Selected: ${getSelectionRange()}`}</div>
         </div>
-        <div className="flex items-center gap-1 ml-4">
-          <button onClick={insertRowBelow} className="px-2 py-1 text-xs bg-green-100 hover:bg-green-200 rounded inline-flex items-center gap-1" title="Insert Row Below">
-            <Plus size={14} /> Row
-          </button>
-          <button onClick={deleteSelectedRows} disabled={!selection} className="px-2 py-1 text-xs bg-red-100 hover:bg-red-200 rounded inline-flex items-center gap-1 disabled:opacity-40" title="Delete Selected Rows">
-            <Trash2 size={14} /> Rows
-          </button>
-        </div>
         <div className="flex items-center gap-3 ml-auto text-xs">
           {selectedColumns?.length > 0 && (
             <div className="flex items-center gap-2 mr-2">

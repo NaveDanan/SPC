@@ -25,13 +25,13 @@ const Header: React.FC = () => {
           </div>
           
           <div className="flex items-center space-x-3">
-            <button
-              className="flex items-center space-x-1 bg-gray-100 text-blue-900 hover:bg-gray-200 transition-colors px-3 py-1.5 rounded-md text-sm font-medium shadow-sm no-print"
-              onClick={() => window.print()}
-            >
-              <Printer size={16} />
-              <span>Print</span>
-            </button>
+            <img
+              src="/images/slogen.png"
+              alt="SPC Logo"
+              className="h-11 w-auto rounded-md bg-white/00 shadow-sm p-1"
+              loading="eager"
+              decoding="async"
+            />
             <button 
               className="flex items-center space-x-1 bg-teal-500 hover:bg-teal-600 transition-colors px-3 py-1.5 rounded-md text-sm font-medium no-print"
               onClick={() => {
