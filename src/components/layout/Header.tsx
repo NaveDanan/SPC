@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Info, Printer } from 'lucide-react';
+import { BarChart3, Info } from 'lucide-react';
 
 const Header: React.FC = () => {
   return (
