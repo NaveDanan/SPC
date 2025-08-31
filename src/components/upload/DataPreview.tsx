@@ -26,10 +26,11 @@ const DataPreview: React.FC = () => {
   const [sortState, setSortState] = useState<{ col: number; dir: 'asc' | 'desc' | null } | null>(null);
   const [formulaValue, setFormulaValue] = useState<string>('');
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [headerDrag, setHeaderDrag] = useState<{ kind: 'row' | 'column' | null; start: number | null }>({ kind: null, start: null });
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; target: 'row' | 'column' | 'cell' | null; row?: number; col?: number }>({ visible: false, x: 0, y: 0, target: null });
   const [clipboard, setClipboard] = useState<
-    | { kind: 'row'; data: Record<string, any>; cut: boolean }
-    | { kind: 'column'; header: string; values: any[]; cut: boolean }
+    | { kind: 'row'; rows: Record<string, any>[]; cut: boolean }
+    | { kind: 'column'; columns: { header: string; values: any[] }[]; cut: boolean }
     | { kind: 'cell'; value: any; cut: boolean }
     | null
   >(null);
@@ -296,17 +297,27 @@ const DataPreview: React.FC = () => {
   };
 
   const copyRowAt = (index: number, cut = false) => {
-    const row = { ...viewData[index] };
-    setClipboard({ kind: 'row', data: row, cut });
+    const minMax = (() => {
+      const min = Math.min(selection?.start.row ?? index, selection?.end.row ?? index);
+      const max = Math.max(selection?.start.row ?? index, selection?.end.row ?? index);
+      const isFullRow = selection && selection.start.col === 0 && selection.end.col === headers.length - 1;
+      return isFullRow ? { start: min, end: max } : { start: index, end: index };
+    })();
+    const rows = viewData.slice(minMax.start, minMax.end + 1).map((r) => ({ ...r }));
+    setClipboard({ kind: 'row', rows, cut });
     if (cut) {
-      deleteRowAt(index);
+      const newData = [...viewData];
+      for (let i = minMax.end; i >= minMax.start; i--) newData.splice(i, 1);
+      setViewData(newData);
+      setUnsavedChanges(true);
     }
   };
 
   const pasteRowAfter = (index: number) => {
     if (!clipboard || clipboard.kind !== 'row') return;
     const newData = [...viewData];
-    newData.splice(index + 1, 0, { ...clipboard.data });
+    const rowsToInsert = clipboard.rows.map((r) => ({ ...r }));
+    newData.splice(index + 1, 0, ...rowsToInsert);
     setViewData(newData);
     setUnsavedChanges(true);
     if (clipboard.cut) setClipboard(null);
@@ -334,6 +345,28 @@ const DataPreview: React.FC = () => {
     setUnsavedChanges(true);
   };
 
+  const insertColumnsRightMultiple = (colIndex: number, count: number) => {
+    if (count <= 1) return insertColumnRight(colIndex);
+    const newHeaders = [...headers];
+    const newWidths = [...columnWidths];
+    const added: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const h = uniqueHeaderName('New Column');
+      added.push(h);
+      newHeaders.splice(colIndex + 1 + i, 0, h);
+      newWidths.splice(colIndex + 1 + i, 0, 120);
+    }
+    const newData = viewData.map((row) => {
+      const r: Record<string, any> = { ...row };
+      added.forEach((h) => (r[h] = ''));
+      return r;
+    });
+    setHeaders(newHeaders);
+    setViewData(newData);
+    setColumnWidths(newWidths);
+    setUnsavedChanges(true);
+  };
+
   const deleteColumnAt = (colIndex: number) => {
     const header = headers[colIndex];
     const newHeaders = headers.filter((_, i) => i !== colIndex);
@@ -353,21 +386,66 @@ const DataPreview: React.FC = () => {
     setUnsavedChanges(true);
   };
 
+  const deleteColumnsRange = (start: number, end: number) => {
+    let s = start;
+    let e = end;
+    if (s > e) [s, e] = [e, s];
+    const toDelete = new Set(headers.slice(s, e + 1));
+    const keepMask = headers.map((_, i) => i < s || i > e);
+    const newHeaders = headers.filter((_, i) => keepMask[i]);
+    const newData = viewData.map((row) => {
+      const r: Record<string, any> = {};
+      headers.forEach((h, i) => {
+        if (keepMask[i]) r[h] = row[h];
+      });
+      return r;
+    });
+    const newWidths = columnWidths.filter((_, i) => keepMask[i]);
+    setHeaders(newHeaders);
+    setViewData(newData);
+    setColumnWidths(newWidths);
+    if (selectedColumns?.length) {
+      const updated = selectedColumns.filter((h): h is string => typeof h === 'string' && !toDelete.has(h));
+      setSelectedColumns(updated);
+    }
+    setUnsavedChanges(true);
+  };
+
   const copyColumnAt = (colIndex: number, cut = false) => {
-    const header = headers[colIndex];
-    const values = viewData.map((row) => row[header] ?? '');
-    setClipboard({ kind: 'column', header, values, cut });
-    if (cut) deleteColumnAt(colIndex);
+    const min = Math.min(selection?.start.col ?? colIndex, selection?.end.col ?? colIndex);
+    const max = Math.max(selection?.start.col ?? colIndex, selection?.end.col ?? colIndex);
+    const isFullCol = selection && selection.start.row === 0 && selection.end.row === viewData.length - 1;
+    const start = isFullCol ? min : colIndex;
+    const end = isFullCol ? max : colIndex;
+    const columns = [] as { header: string; values: any[] }[];
+    for (let c = start; c <= end; c++) {
+      const header = headers[c];
+      const values = viewData.map((row) => row[header] ?? '');
+      columns.push({ header, values });
+    }
+    setClipboard({ kind: 'column', columns, cut });
+    if (cut) deleteColumnsRange(start, end);
   };
 
   const pasteColumnAt = (colIndex: number) => {
     if (!clipboard || clipboard.kind !== 'column') return;
-    const headerName = clipboard.cut ? clipboard.header : uniqueHeaderName(clipboard.header);
     const newHeaders = [...headers];
-    newHeaders.splice(colIndex + 1, 0, headerName);
-    const newData = viewData.map((row, i) => ({ ...row, [headerName]: clipboard.values[i] ?? '' }));
     const newWidths = [...columnWidths];
-    newWidths.splice(colIndex + 1, 0, 120);
+    const addedNames: string[] = [];
+    clipboard.columns.forEach((col, idx) => {
+      const name = clipboard.cut ? col.header : uniqueHeaderName(col.header);
+      newHeaders.splice(colIndex + 1 + idx, 0, name);
+      newWidths.splice(colIndex + 1 + idx, 0, 120);
+      addedNames.push(name);
+    });
+    const newData = viewData.map((row, rowIndex) => {
+      const r: Record<string, any> = { ...row };
+      clipboard.columns.forEach((col, idx) => {
+        const target = addedNames[idx];
+        r[target] = col.values[rowIndex] ?? '';
+      });
+      return r;
+    });
     setHeaders(newHeaders);
     setViewData(newData);
     setColumnWidths(newWidths);
@@ -486,6 +564,9 @@ const DataPreview: React.FC = () => {
 
   const handleGlobalMouseUp = useCallback(() => {
     if (resizingCol !== null) setResizingCol(null);
+    // Always stop header dragging and cell selecting on mouse up
+    setHeaderDrag({ kind: null, start: null });
+    setIsSelecting(false);
   }, [resizingCol]);
 
   useEffect(() => {
@@ -514,6 +595,29 @@ const DataPreview: React.FC = () => {
     const minCol = Math.min(selection.start.col, selection.end.col);
     const maxCol = Math.max(selection.start.col, selection.end.col);
     return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+  };
+
+  // Header drag selection handlers
+  const beginColumnRangeSelection = (colIndex: number) => {
+    setHeaderDrag({ kind: 'column', start: colIndex });
+    setSelection({ start: { row: 0, col: colIndex }, end: { row: viewData.length - 1, col: colIndex } });
+  };
+
+  const extendColumnRangeSelection = (colIndex: number) => {
+    if (headerDrag.kind !== 'column' || headerDrag.start === null) return;
+    const startCol = headerDrag.start;
+    setSelection({ start: { row: 0, col: startCol }, end: { row: viewData.length - 1, col: colIndex } });
+  };
+
+  const beginRowRangeSelection = (rowIndex: number) => {
+    setHeaderDrag({ kind: 'row', start: rowIndex });
+    setSelection({ start: { row: rowIndex, col: 0 }, end: { row: rowIndex, col: headers.length - 1 } });
+  };
+
+  const extendRowRangeSelection = (rowIndex: number) => {
+    if (headerDrag.kind !== 'row' || headerDrag.start === null) return;
+    const startRow = headerDrag.start;
+    setSelection({ start: { row: startRow, col: 0 }, end: { row: rowIndex, col: headers.length - 1 } });
   };
 
   return (
@@ -587,6 +691,11 @@ const DataPreview: React.FC = () => {
                   style={{ width: columnWidths[colIndex] }}
                   className="relative border border-gray-200 bg-gray-100 px-1 py-0.5 text-xs font-semibold text-gray-600 select-none cursor-pointer group"
                   onClick={() => selectColumn(colIndex)}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return; // left click only
+                    beginColumnRangeSelection(colIndex);
+                  }}
+                  onMouseEnter={() => extendColumnRangeSelection(colIndex)}
                   onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
                 >
                   <div className="flex items-center justify-center gap-1">
@@ -609,14 +718,19 @@ const DataPreview: React.FC = () => {
                   <th
                     key={header + colIndex}
                     style={{ width: columnWidths[colIndex] }}
-                    className={`relative border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-700 align-middle cursor-pointer hover:bg-blue-50 ${selection && selection.start.col === colIndex && selection.end.col === colIndex ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      sortByColumn(colIndex);
-                    }}
-                    onDoubleClick={() => startHeaderEdit(colIndex)}
-                    onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
-                  >
+                  className={`relative border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-700 align-middle cursor-pointer hover:bg-blue-50 ${selection && selection.start.col === colIndex && selection.end.col === colIndex ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    sortByColumn(colIndex);
+                  }}
+                  onDoubleClick={() => startHeaderEdit(colIndex)}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return;
+                    beginColumnRangeSelection(colIndex);
+                  }}
+                  onMouseEnter={() => extendColumnRangeSelection(colIndex)}
+                  onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
+                >
                     {editingHeader === colIndex ? (
                       <input
                         className="w-full text-xs border border-blue-300 rounded px-1 py-0.5 focus:outline-none"
@@ -681,6 +795,11 @@ const DataPreview: React.FC = () => {
                 <td
                   className={`border border-gray-200 bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 text-center cursor-pointer select-none ${selection && rowIndex >= Math.min(selection.start.row, selection.end.row) && rowIndex <= Math.max(selection.start.row, selection.end.row) ? 'bg-blue-100' : ''}`}
                   onClick={() => selectRow(rowIndex)}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return;
+                    beginRowRangeSelection(rowIndex);
+                  }}
+                  onMouseEnter={() => extendRowRangeSelection(rowIndex)}
                   onContextMenu={(e) => openContextMenu(e, 'row', rowIndex)}
                 >
                   {rowIndex + 1}
@@ -736,10 +855,32 @@ const DataPreview: React.FC = () => {
           {contextMenu.target === 'row' && (
             <ul className="py-1">
               <li>
-                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { insertRowAt((contextMenu.row ?? 0) + 1); setContextMenu({ ...contextMenu, visible: false }); }}>Insert Row</button>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => {
+                  const min = Math.min(selection?.start.row ?? (contextMenu.row ?? 0), selection?.end.row ?? (contextMenu.row ?? 0));
+                  const max = Math.max(selection?.start.row ?? (contextMenu.row ?? 0), selection?.end.row ?? (contextMenu.row ?? 0));
+                  const isFullRow = selection && selection.start.col === 0 && selection.end.col === headers.length - 1;
+                  const count = isFullRow ? (max - min + 1) : 1;
+                  if (isFullRow) {
+                    for (let i = 0; i < count; i++) insertRowAt(max + 1);
+                  } else {
+                    insertRowAt((contextMenu.row ?? 0) + 1);
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Insert Row</button>
               </li>
               <li>
-                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined) deleteRowAt(contextMenu.row); setContextMenu({ ...contextMenu, visible: false }); }}>Delete Row</button>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => {
+                  if (selection && selection.start.col === 0 && selection.end.col === headers.length - 1) {
+                    const min = Math.min(selection.start.row, selection.end.row);
+                    const max = Math.max(selection.start.row, selection.end.row);
+                    const newData = viewData.filter((_, i) => i < min || i > max);
+                    setViewData(newData);
+                    setUnsavedChanges(true);
+                  } else if (contextMenu.row !== undefined) {
+                    deleteRowAt(contextMenu.row);
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Delete Row</button>
               </li>
               <li className="border-t my-1" />
               <li>
@@ -749,17 +890,41 @@ const DataPreview: React.FC = () => {
                 <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined) copyRowAt(contextMenu.row, true); setContextMenu({ ...contextMenu, visible: false }); }}>Cut Row</button>
               </li>
               <li>
-                <button disabled={!clipboard || clipboard.kind !== 'row'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'row' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => { if (contextMenu.row !== undefined) pasteRowAfter(contextMenu.row); setContextMenu({ ...contextMenu, visible: false }); }}>Paste Row</button>
+                <button disabled={!clipboard || clipboard.kind !== 'row'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'row' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => {
+                  if (contextMenu.row !== undefined) {
+                    // Paste after the end of selected rows if full-row selection exists
+                    const isFullRow = selection && selection.start.col === 0 && selection.end.col === headers.length - 1;
+                    const max = isFullRow ? Math.max(selection!.start.row, selection!.end.row) : contextMenu.row;
+                    pasteRowAfter(max);
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Paste Row</button>
               </li>
             </ul>
           )}
           {contextMenu.target === 'column' && (
             <ul className="py-1">
               <li>
-                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { insertColumnRight(contextMenu.col ?? 0); setContextMenu({ ...contextMenu, visible: false }); }}>Insert Column</button>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => {
+                  const min = Math.min(selection?.start.col ?? (contextMenu.col ?? 0), selection?.end.col ?? (contextMenu.col ?? 0));
+                  const max = Math.max(selection?.start.col ?? (contextMenu.col ?? 0), selection?.end.col ?? (contextMenu.col ?? 0));
+                  const isFullCol = selection && selection.start.row === 0 && selection.end.row === viewData.length - 1;
+                  const count = isFullCol ? (max - min + 1) : 1;
+                  if (isFullCol) insertColumnsRightMultiple(max, count); else insertColumnRight(contextMenu.col ?? 0);
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Insert Column</button>
               </li>
               <li>
-                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.col !== undefined) deleteColumnAt(contextMenu.col); setContextMenu({ ...contextMenu, visible: false }); }}>Delete Column</button>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => {
+                  if (selection && selection.start.row === 0 && selection.end.row === viewData.length - 1) {
+                    const min = Math.min(selection.start.col, selection.end.col);
+                    const max = Math.max(selection.start.col, selection.end.col);
+                    deleteColumnsRange(min, max);
+                  } else if (contextMenu.col !== undefined) {
+                    deleteColumnAt(contextMenu.col);
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Delete Column</button>
               </li>
               <li className="border-t my-1" />
               <li>
@@ -769,7 +934,14 @@ const DataPreview: React.FC = () => {
                 <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.col !== undefined) copyColumnAt(contextMenu.col, true); setContextMenu({ ...contextMenu, visible: false }); }}>Cut Column</button>
               </li>
               <li>
-                <button disabled={!clipboard || clipboard.kind !== 'column'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'column' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => { if (contextMenu.col !== undefined) pasteColumnAt(contextMenu.col); setContextMenu({ ...contextMenu, visible: false }); }}>Paste Column</button>
+                <button disabled={!clipboard || clipboard.kind !== 'column'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'column' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => {
+                  if (contextMenu.col !== undefined) {
+                    const isFullCol = selection && selection.start.row === 0 && selection.end.row === viewData.length - 1;
+                    const max = isFullCol ? Math.max(selection!.start.col, selection!.end.col) : (contextMenu.col ?? 0);
+                    pasteColumnAt(max);
+                  }
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}>Paste Column</button>
               </li>
             </ul>
           )}
