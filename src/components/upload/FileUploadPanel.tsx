@@ -97,7 +97,10 @@ const FileUploadPanel: React.FC = () => {
               id="data-column"
               className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               value={selectedColumns[0] || ''}
-              onChange={(e) => setSelectedColumns([e.target.value, selectedColumns[1]])}
+              onChange={(e) => {
+                const next = selectedColumns[1] ? [e.target.value, selectedColumns[1]] : [e.target.value];
+                setSelectedColumns(next);
+              }}
             >
               {rawData.headers.map((header) => (
                 <option key={header} value={header}>

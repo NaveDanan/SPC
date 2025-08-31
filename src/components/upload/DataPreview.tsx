@@ -26,6 +26,13 @@ const DataPreview: React.FC = () => {
   const [sortState, setSortState] = useState<{ col: number; dir: 'asc' | 'desc' | null } | null>(null);
   const [formulaValue, setFormulaValue] = useState<string>('');
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; target: 'row' | 'column' | 'cell' | null; row?: number; col?: number }>({ visible: false, x: 0, y: 0, target: null });
+  const [clipboard, setClipboard] = useState<
+    | { kind: 'row'; data: Record<string, any>; cut: boolean }
+    | { kind: 'column'; header: string; values: any[]; cut: boolean }
+    | { kind: 'cell'; value: any; cut: boolean }
+    | null
+  >(null);
   const resizeStartX = useRef<number>(0);
   const originalWidth = useRef<number>(0);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -71,6 +78,25 @@ const DataPreview: React.FC = () => {
   };
 
   const endSelection = () => setIsSelecting(false);
+
+  // Close context menu on global click/escape
+  useEffect(() => {
+    const onClick = () => setContextMenu((m) => ({ ...m, visible: false }));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu((m) => ({ ...m, visible: false }));
+    };
+    window.addEventListener('click', onClick);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', onClick);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  const openContextMenu = (e: React.MouseEvent, target: 'row' | 'column' | 'cell', row?: number, col?: number) => {
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, target, row, col });
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!selection) return;
@@ -250,6 +276,125 @@ const DataPreview: React.FC = () => {
     newData.splice(insertIndex, 0, emptyRow);
     setViewData(newData);
     setUnsavedChanges(true);
+  };
+
+  // Context operations helpers
+  const insertRowAt = (index: number) => {
+    if (!headers.length) return;
+    const emptyRow: Record<string, any> = {};
+    headers.forEach((h) => (emptyRow[h] = ''));
+    const newData = [...viewData];
+    newData.splice(index, 0, emptyRow);
+    setViewData(newData);
+    setUnsavedChanges(true);
+  };
+
+  const deleteRowAt = (index: number) => {
+    const newData = viewData.filter((_, i) => i !== index);
+    setViewData(newData);
+    setUnsavedChanges(true);
+  };
+
+  const copyRowAt = (index: number, cut = false) => {
+    const row = { ...viewData[index] };
+    setClipboard({ kind: 'row', data: row, cut });
+    if (cut) {
+      deleteRowAt(index);
+    }
+  };
+
+  const pasteRowAfter = (index: number) => {
+    if (!clipboard || clipboard.kind !== 'row') return;
+    const newData = [...viewData];
+    newData.splice(index + 1, 0, { ...clipboard.data });
+    setViewData(newData);
+    setUnsavedChanges(true);
+    if (clipboard.cut) setClipboard(null);
+  };
+
+  const uniqueHeaderName = (base: string) => {
+    let name = base;
+    const existing = new Set(headers);
+    if (!existing.has(name)) return name;
+    let i = 2;
+    while (existing.has(`${base} ${i}`)) i++;
+    return `${base} ${i}`;
+  };
+
+  const insertColumnRight = (colIndex: number) => {
+    const newHeader = uniqueHeaderName('New Column');
+    const newHeaders = [...headers];
+    newHeaders.splice(colIndex + 1, 0, newHeader);
+    const newData = viewData.map((row) => ({ ...row, [newHeader]: '' }));
+    const newWidths = [...columnWidths];
+    newWidths.splice(colIndex + 1, 0, 120);
+    setHeaders(newHeaders);
+    setViewData(newData);
+    setColumnWidths(newWidths);
+    setUnsavedChanges(true);
+  };
+
+  const deleteColumnAt = (colIndex: number) => {
+    const header = headers[colIndex];
+    const newHeaders = headers.filter((_, i) => i !== colIndex);
+    const newData = viewData.map((row) => {
+      const { [header]: _removed, ...rest } = row;
+      return rest;
+    });
+    const newWidths = columnWidths.filter((_, i) => i !== colIndex);
+    setHeaders(newHeaders);
+    setViewData(newData);
+    setColumnWidths(newWidths);
+    // Update selected X/Y if needed
+    if (selectedColumns?.length) {
+      const updated = selectedColumns.filter((h): h is string => typeof h === 'string' && h !== header);
+      setSelectedColumns(updated);
+    }
+    setUnsavedChanges(true);
+  };
+
+  const copyColumnAt = (colIndex: number, cut = false) => {
+    const header = headers[colIndex];
+    const values = viewData.map((row) => row[header] ?? '');
+    setClipboard({ kind: 'column', header, values, cut });
+    if (cut) deleteColumnAt(colIndex);
+  };
+
+  const pasteColumnAt = (colIndex: number) => {
+    if (!clipboard || clipboard.kind !== 'column') return;
+    const headerName = clipboard.cut ? clipboard.header : uniqueHeaderName(clipboard.header);
+    const newHeaders = [...headers];
+    newHeaders.splice(colIndex + 1, 0, headerName);
+    const newData = viewData.map((row, i) => ({ ...row, [headerName]: clipboard.values[i] ?? '' }));
+    const newWidths = [...columnWidths];
+    newWidths.splice(colIndex + 1, 0, 120);
+    setHeaders(newHeaders);
+    setViewData(newData);
+    setColumnWidths(newWidths);
+    setUnsavedChanges(true);
+    if (clipboard.cut) setClipboard(null);
+  };
+
+  const copyCellAt = (row: number, col: number, cut = false) => {
+    const header = headers[col];
+    const value = viewData[row]?.[header] ?? '';
+    setClipboard({ kind: 'cell', value, cut });
+    if (cut) {
+      const newData = [...viewData];
+      newData[row] = { ...newData[row], [header]: '' };
+      setViewData(newData);
+      setUnsavedChanges(true);
+    }
+  };
+
+  const pasteCellAt = (row: number, col: number) => {
+    if (!clipboard || clipboard.kind !== 'cell') return;
+    const header = headers[col];
+    const newData = [...viewData];
+    newData[row] = { ...newData[row], [header]: clipboard.value };
+    setViewData(newData);
+    setUnsavedChanges(true);
+    if (clipboard.cut) setClipboard(null);
   };
 
   const deleteSelectedRows = () => {
@@ -442,6 +587,7 @@ const DataPreview: React.FC = () => {
                   style={{ width: columnWidths[colIndex] }}
                   className="relative border border-gray-200 bg-gray-100 px-1 py-0.5 text-xs font-semibold text-gray-600 select-none cursor-pointer group"
                   onClick={() => selectColumn(colIndex)}
+                  onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
                 >
                   <div className="flex items-center justify-center gap-1">
                     <span>{letter}</span>
@@ -469,6 +615,7 @@ const DataPreview: React.FC = () => {
                       sortByColumn(colIndex);
                     }}
                     onDoubleClick={() => startHeaderEdit(colIndex)}
+                    onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
                   >
                     {editingHeader === colIndex ? (
                       <input
@@ -534,6 +681,7 @@ const DataPreview: React.FC = () => {
                 <td
                   className={`border border-gray-200 bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 text-center cursor-pointer select-none ${selection && rowIndex >= Math.min(selection.start.row, selection.end.row) && rowIndex <= Math.max(selection.start.row, selection.end.row) ? 'bg-blue-100' : ''}`}
                   onClick={() => selectRow(rowIndex)}
+                  onContextMenu={(e) => openContextMenu(e, 'row', rowIndex)}
                 >
                   {rowIndex + 1}
                 </td>
@@ -551,6 +699,7 @@ const DataPreview: React.FC = () => {
                       onMouseMove={() => extendSelection(rowIndex, colIndex)}
                       onMouseUp={endSelection}
                       onDoubleClick={() => handleDoubleClick(rowIndex, colIndex)}
+                      onContextMenu={(e) => openContextMenu(e, 'cell', rowIndex, colIndex)}
                     >
                       {editingCell?.row === rowIndex && editingCell?.col === colIndex ? (
                         <input
@@ -576,6 +725,69 @@ const DataPreview: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu.visible && (
+        <div
+          className="fixed z-50 bg-white border border-gray-200 rounded shadow-lg text-sm"
+          style={{ top: contextMenu.y + 2, left: contextMenu.x + 2, minWidth: 180 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.target === 'row' && (
+            <ul className="py-1">
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { insertRowAt((contextMenu.row ?? 0) + 1); setContextMenu({ ...contextMenu, visible: false }); }}>Insert Row</button>
+              </li>
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined) deleteRowAt(contextMenu.row); setContextMenu({ ...contextMenu, visible: false }); }}>Delete Row</button>
+              </li>
+              <li className="border-t my-1" />
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined) copyRowAt(contextMenu.row, false); setContextMenu({ ...contextMenu, visible: false }); }}>Copy Row</button>
+              </li>
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined) copyRowAt(contextMenu.row, true); setContextMenu({ ...contextMenu, visible: false }); }}>Cut Row</button>
+              </li>
+              <li>
+                <button disabled={!clipboard || clipboard.kind !== 'row'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'row' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => { if (contextMenu.row !== undefined) pasteRowAfter(contextMenu.row); setContextMenu({ ...contextMenu, visible: false }); }}>Paste Row</button>
+              </li>
+            </ul>
+          )}
+          {contextMenu.target === 'column' && (
+            <ul className="py-1">
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { insertColumnRight(contextMenu.col ?? 0); setContextMenu({ ...contextMenu, visible: false }); }}>Insert Column</button>
+              </li>
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.col !== undefined) deleteColumnAt(contextMenu.col); setContextMenu({ ...contextMenu, visible: false }); }}>Delete Column</button>
+              </li>
+              <li className="border-t my-1" />
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.col !== undefined) copyColumnAt(contextMenu.col, false); setContextMenu({ ...contextMenu, visible: false }); }}>Copy Column</button>
+              </li>
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.col !== undefined) copyColumnAt(contextMenu.col, true); setContextMenu({ ...contextMenu, visible: false }); }}>Cut Column</button>
+              </li>
+              <li>
+                <button disabled={!clipboard || clipboard.kind !== 'column'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'column' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => { if (contextMenu.col !== undefined) pasteColumnAt(contextMenu.col); setContextMenu({ ...contextMenu, visible: false }); }}>Paste Column</button>
+              </li>
+            </ul>
+          )}
+          {contextMenu.target === 'cell' && (
+            <ul className="py-1">
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined && contextMenu.col !== undefined) copyCellAt(contextMenu.row, contextMenu.col, false); setContextMenu({ ...contextMenu, visible: false }); }}>Copy Cell</button>
+              </li>
+              <li>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined && contextMenu.col !== undefined) copyCellAt(contextMenu.row, contextMenu.col, true); setContextMenu({ ...contextMenu, visible: false }); }}>Cut Cell</button>
+              </li>
+              <li>
+                <button disabled={!clipboard || clipboard.kind !== 'cell'} className={`w-full text-left px-3 py-1.5 ${clipboard && clipboard.kind === 'cell' ? 'hover:bg-gray-100' : 'text-gray-400 cursor-not-allowed'}`} onClick={() => { if (contextMenu.row !== undefined && contextMenu.col !== undefined) pasteCellAt(contextMenu.row, contextMenu.col); setContextMenu({ ...contextMenu, visible: false }); }}>Paste Cell</button>
+              </li>
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Sheet Tabs (placeholder for future multi-sheet support) */}
       <div className="flex items-center mt-2 border-t border-gray-200 pt-1 text-xs text-gray-600 flex-wrap gap-1">

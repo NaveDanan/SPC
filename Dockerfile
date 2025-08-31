@@ -32,7 +32,7 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -q -O /dev/null http://localhost/healthz || exit 1
 
 # Labels for OCI compliance
-LABEL org.opencontainers.image.source="https://github.com/your-org/spc-analysis-tool" \
+LABEL org.opencontainers.image.source="https://https://github.com/NaveDanan/SPC" \
       org.opencontainers.image.description="SPC Analysis Tool - React SPA" \
       org.opencontainers.image.licenses="Apache-2.0"
 
