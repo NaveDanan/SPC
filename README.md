@@ -87,6 +87,18 @@ Tailor `values.yaml` for ingress host, resources, and any config map entries. Fo
 - Data stays in the browser; no server is required to analyze files.
 - Western Electric rules are used for highlighting potential special‑cause variation; validate results with your process context.
 
+## GitHub Pages
+
+This project can be hosted on GitHub Pages as a static site. The repository includes a GitHub Action that builds the Vite app and publishes the `dist/` output to the `gh-pages` branch.
+
+Quick checklist to publish:
+
+- Ensure `vite.config.ts` has the correct `base` option set to your repository name (for example `base: '/SPC/'`).
+- Push to the `main` branch — the action `.github/workflows/deploy.yml` will run on push and publish the `dist/` folder to the `gh-pages` branch.
+- In your repository Settings → Pages, set the source to the `gh-pages` branch and the root folder. GitHub will serve the site at `https://<your-org-or-username>.github.io/<repo-name>/`.
+
+If you prefer the site at the root domain (`https://<username>.github.io/`), remove the `base` option in `vite.config.ts` (or set it to `/`) and publish from the repository named `<username>.github.io`.
+
 ## License
 
 This project is provided as‑is. Add your preferred license here if applicable.
