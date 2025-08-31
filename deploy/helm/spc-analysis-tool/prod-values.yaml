@@ -1,0 +1,102 @@
+# Production values for spc-analysis-tool (used by ArgoCD)
+
+image:
+  # Replace with your offline/private registry
+  repository: registry.internal.example.com/spc/spc-analysis-tool
+  # Prefer immutable digests for prod (example shows tag for readability)
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: regcred
+
+replicaCount: 3
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: spc.example.internal
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts: [spc.example.internal]
+      secretName: spc-tls
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  # Allow only DNS by default; add CIDRs if the app needs egress
+  allowedEgressCIDRs: []
+  allowDNS: true
+
+config:
+  enabled: true
+  data:
+    runtime-config.js: |
+      window.APP_CONFIG = {
+        ENV: "prod",
+        FEATURES: {},
+      };
+
+secretEnv:
+  enabled: false
+
+externalSecret:
+  enabled: false
+  refreshInterval: 1h
+  secretStoreRef:
+    name: default
+    kind: ClusterSecretStore
+  target:
+    name: spc-secret-env
+  data: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+nginxExporter:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
+
+rbac:
+  create: false
+
+limitRange:
+  enabled: false
+
+resourceQuota:
+  enabled: false
+
+priorityClassName: ""
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+

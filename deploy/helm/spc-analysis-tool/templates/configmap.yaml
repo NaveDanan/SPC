@@ -1,0 +1,13 @@
+{{- if .Values.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spc.fullname" . }}-config
+  labels:
+    {{- include "spc.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config.data }}
+  {{ $k }}: |
+{{ $v | indent 4 }}
+  {{- end }}
+{{- end }}

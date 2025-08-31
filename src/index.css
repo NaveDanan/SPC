@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Print Styling for A4 formal layout */
+@media print {
+	@page {
+		size: A4 portrait;
+		margin: 12mm 12mm 14mm 12mm; /* Balanced print margins */
+	}
+
+	html, body {
+		background: #fff !important;
+	}
+
+	/* Hide interactive / navigation / non-essential UI elements */
+	header, footer, nav, button, [role="alert"], .no-print, .dropzone, input, select, textarea {
+		display: none !important;
+	}
+
+	/* Containers */
+	.container, main, #root > div, .print-area {
+		max-width: 100% !important;
+		padding: 0 !important;
+		margin: 0 !important;
+	}
+
+	/* Cards become flat sections */
+	.bg-white, .shadow-md, .rounded-lg {
+		box-shadow: none !important;
+		border-radius: 0 !important;
+		border: 0 !important;
+	}
+
+	/* Typography adjustments */
+	h1, h2, h3, h4 {
+		page-break-after: avoid;
+		color: #000 !important;
+	}
+	h2 { font-size: 16pt !important; margin-top: 8pt; }
+	h3 { font-size: 13pt !important; }
+	p, li, td, th { font-size: 10pt !important; }
+
+	/* Tables */
+	table {
+		page-break-inside: auto;
+		border-collapse: collapse !important;
+		width: 100% !important;
+	}
+	thead { display: table-header-group; }
+	tfoot { display: table-footer-group; }
+	th, td {
+		border: 1px solid #444 !important;
+		padding: 2px 4px !important;
+	}
+	th { background: #f0f0f0 !important; }
+
+	/* Avoid breaking inside important analytical blocks */
+	.chart-panel, .data-preview, .rule-violations { page-break-inside: avoid; }
+
+	/* Force page breaks if content grows large */
+	.page-break { page-break-before: always; }
+
+	/* Remove scroll behavior artifacts */
+	.overflow-auto, .max-h-\[400px\] { overflow: visible !important; max-height: none !important; }
+
+	/* Simplify colors for greyscale printers */
+	.text-gray-800, .text-gray-700, .text-gray-600 { color: #000 !important; }
+	.bg-blue-50, .bg-gray-50 { background: #fff !important; }
+	.bg-blue-100 { background: #e6f0fa !important; }
+
+	/* Hide sheet management chrome in print */
+	.sheet-tabs button, .sheet-tabs div button { display: none !important; }
+}

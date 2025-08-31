@@ -1,0 +1,24 @@
+apiVersion: v2
+name: spc-analysis-tool
+# SemVer of the chart
+version: 0.1.0
+# App version (container image version). Keep distinct for upgrade logic.
+appVersion: "0.1.0"
+description: Statistical Process Control (SPC) Analysis React SPA
+home: https://github.com/your-org/spc-analysis-tool
+sources:
+  - https://github.com/your-org/spc-analysis-tool
+keywords:
+  - spc
+  - quality
+  - charts
+  - react
+maintainers:
+  - name: platform-team
+    email: platform@example.com
+icon: https://raw.githubusercontent.com/your-org/spc-analysis-tool/main/docs/icon.png
+annotations:
+  category: frontend
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: "false"

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+  <!-- Favicon and application icons -->
+  <link rel="icon" type="image/png" href="/images/logo.png" />
+  <link rel="apple-touch-icon" href="/images/logo.png" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Statistical Process Control (SPC) Analysis Tool" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SPC Analysis Web Application</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Optional runtime config (mounted via ConfigMap in Kubernetes) -->
+    <script src="/config/runtime-config.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
