@@ -22,7 +22,7 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center mb-2">
               <h2 className="text-xl font-semibold text-teal-600 mr-2">Welcome to</h2>
               <img
-              src="/images/slogen.png"
+              src={`${import.meta.env.BASE_URL}images/slogen.png`}
               alt="SPC Slogan"
               className="h-10 w-auto mx-auto md:mx-0"
               loading="lazy"

@@ -8,7 +8,7 @@ const Header: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <img
-              src="/images/logo.png"
+              src={`${import.meta.env.BASE_URL}images/logo.png`}
               alt="SPC Logo"
               className="h-16 w-auto rounded-sm shadow-sm p-1"
               loading="eager"
@@ -26,7 +26,7 @@ const Header: React.FC = () => {
           
           <div className="flex items-center space-x-3">
             <img
-              src="/images/slogen.png"
+              src={`${import.meta.env.BASE_URL}images/slogen.png`}
               alt="SPC Logo"
               className="h-11 w-auto rounded-md bg-white/00 shadow-sm p-1"
               loading="eager"
