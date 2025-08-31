@@ -89,25 +89,6 @@ const FileUploadPanel: React.FC = () => {
       {/* Data configuration */}
       {rawData && rawData.headers.length > 0 && (
         <div className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="data-column" className="block text-sm font-medium text-gray-700 mb-1">
-              Select Y-Value Column (used for SPC)
-            </label>
-            <select
-              id="data-column"
-              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              value={selectedColumns[0] || ''}
-              onChange={(e) => {
-                setSelectedColumns([e.target.value, ...selectedColumns.slice(1).filter(() => false)]);
-              }}
-            >
-              {rawData.headers.map((header) => (
-                <option key={header} value={header}>
-                  {header}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div>
             <label htmlFor="x-axis-column" className="block text-sm font-medium text-gray-700 mb-1">
@@ -130,6 +111,25 @@ const FileUploadPanel: React.FC = () => {
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">If set, charts use this column for X values (e.g., Date).</p>
+          </div>
+          <div>
+            <label htmlFor="data-column" className="block text-sm font-medium text-gray-700 mb-1">
+              Select Y-Value Column (used for SPC)
+            </label>
+            <select
+              id="data-column"
+              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={selectedColumns[0] || ''}
+              onChange={(e) => {
+                setSelectedColumns([e.target.value, ...selectedColumns.slice(1).filter(() => false)]);
+              }}
+            >
+              {rawData.headers.map((header) => (
+                <option key={header} value={header}>
+                  {header}
+                </option>
+              ))}
+            </select>
           </div>
           
           <div>
