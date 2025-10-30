@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,11 +11,24 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
 import { calculateEWMAValues } from '../../../utils/spcCalculations';
 
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  zoomPlugin
+);
+
 const EWMAChart: React.FC = () => {
   const { processedData, selectedColumns, chartOptions, xAxisColumn } = useAppContext();
+  const chartRef = useRef<ChartJS<'line'> | null>(null);
   
   if (!processedData || !selectedColumns.length) {
     return <div>No data available</div>;
@@ -100,6 +113,25 @@ const EWMAChart: React.FC = () => {
     ],
   };
   
+  type ScaleWithMinMax = { min?: number; max?: number };
+  const resetChart = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+      try { chart.resetZoom(); return; } catch { /* noop */ }
+    }
+    chart.options.scales = chart.options.scales || {};
+    if (chart.options.scales.x) {
+      const sx = chart.options.scales.x as unknown as ScaleWithMinMax;
+      delete sx.min; delete sx.max;
+    }
+    if (chart.options.scales.y) {
+      const sy = chart.options.scales.y as unknown as ScaleWithMinMax;
+      delete sy.min; delete sy.max;
+    }
+    chart.update('none');
+  };
+
   const chartOptions1: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -140,6 +172,10 @@ const EWMAChart: React.FC = () => {
             return labels;
           }
         }
+      },
+      zoom: {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' },
+        pan: { enabled: true, mode: 'xy' },
       }
     },
     scales: {
@@ -159,8 +195,13 @@ const EWMAChart: React.FC = () => {
   };
   
   return (
-    <div style={{ height: '400px' }}>
-      <Line data={chartData} options={chartOptions1} />
+    <div style={{ height: '440px' }}>
+      <div className="flex gap-2 justify-end mb-2">
+        <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={resetChart}>Reset View</button>
+      </div>
+      <div style={{ height: '400px' }}>
+        <Line ref={chartRef} data={chartData} options={chartOptions1} />
+      </div>
       <div className="mt-2 text-xs text-gray-500">
         <p>EWMA (λ={lambda}): Exponentially Weighted Moving Average with weighting factor λ</p>
       </div>

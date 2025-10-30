@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,12 +11,17 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
 import { computeXbarSComponents, calculateStandardDeviation, calculateMean, getControlChartConstants } from '../../../utils/spcCalculations';
 import { detectRuleViolations } from '../../../utils/westernElectricRules';
 
+ChartJS.register(zoomPlugin);
+
 const XBarSChart: React.FC = () => {
   const { processedData, selectedColumns, chartOptions, sampleSize } = useAppContext();
+  const xbarRef = useRef<any>(null);
+  const sRef = useRef<any>(null);
   
   if (!processedData || !selectedColumns.length) {
     return <div>No data available</div>;
@@ -157,6 +162,18 @@ const XBarSChart: React.FC = () => {
     ],
   };
 
+  const resetChart = (ref: React.MutableRefObject<any>) => {
+    const chart = ref.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+      try { chart.resetZoom(); return; } catch { /* noop */ }
+    }
+    chart.options.scales = chart.options.scales || {};
+    if (chart.options.scales.x) { delete (chart.options.scales.x as any).min; delete (chart.options.scales.x as any).max; }
+    if (chart.options.scales.y) { delete (chart.options.scales.y as any).min; delete (chart.options.scales.y as any).max; }
+    chart.update('none');
+  };
+
   const xbarOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -183,6 +200,10 @@ const XBarSChart: React.FC = () => {
             return labels;
           }
         }
+      },
+      zoom: {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' },
+        pan: { enabled: true, mode: 'xy' },
       }
     },
     scales: {
@@ -224,6 +245,10 @@ const XBarSChart: React.FC = () => {
             return labels;
           }
         }
+      },
+      zoom: {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' },
+        pan: { enabled: true, mode: 'xy' },
       }
     },
     scales: {
@@ -234,11 +259,21 @@ const XBarSChart: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div style={{ height: '320px' }}>
-        <Line data={xbarData} options={xbarOptions} />
+      <div className="space-y-2" style={{ height: '360px' }}>
+        <div className="flex gap-2 justify-end">
+          <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={() => resetChart(xbarRef)}>Reset View</button>
+        </div>
+        <div className="h-[320px]">
+          <Line ref={xbarRef} data={xbarData} options={xbarOptions} />
+        </div>
       </div>
-      <div style={{ height: '320px' }}>
-        <Line data={sData} options={sOptions} />
+      <div className="space-y-2" style={{ height: '360px' }}>
+        <div className="flex gap-2 justify-end">
+          <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={() => resetChart(sRef)}>Reset View</button>
+        </div>
+        <div className="h-[320px]">
+          <Line ref={sRef} data={sData} options={sOptions} />
+        </div>
       </div>
     </div>
   );

@@ -94,6 +94,8 @@ const Dashboard: React.FC = () => {
                 <ChartPanel />
               </div>
             )}
+
+            {/* Copilot chat removed in favor of AI Chart Assistant panel */}
           </div>
         </div>
       </div>

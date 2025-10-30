@@ -16,6 +16,7 @@ A modern, client‑side Statistical Process Control (SPC) web application for ex
 - Summary stats: mean (CL), σ, UCL, LCL, and capability indicators (Cpl/Cpu/Cpk display).
 - Export: save processed data to CSV or Excel from the browser.
 - Responsive UI: Tailwind‑styled panels, control sidebar, and helpful chart guidance.
+- AI guidance: Ask the built-in assistant to review uploaded data and recommend SPC chart types with context-aware advice.
 - Deployable anywhere: Docker image and Helm chart for Kubernetes with best‑practice manifests.
 
 ## Screenshots
@@ -38,6 +39,25 @@ A modern, client‑side Statistical Process Control (SPC) web application for ex
 - Install deps: `npm install` (or `pnpm install`).
 - Run dev: `npm run dev` then open the local URL shown by Vite.
 - Build: `npm run build` (outputs static assets to `dist/`).
+
+## AI Chart Assistant Configuration
+
+The "Ask AI" workflow connects to any OpenAI-compatible endpoint to analyse your uploaded CSV/XLS/XLSX data and suggest the most appropriate SPC chart.
+
+1. Copy `.env.example` to `.env.local` (or `.env`) in the project root.
+2. Set the following variables with your provider details:
+
+   ```bash
+   VITE_AI_API_URL="https://api.openai.com"
+   VITE_AI_API_KEY="sk-..."
+   VITE_AI_MODEL="gpt-4o-mini" # Optional; defaults to gpt-4o-mini
+   ```
+
+   > `VITE_AI_API_URL` should point to the base URL of a service that exposes the `/v1/chat/completions` endpoint.
+
+3. Restart `npm run dev` so Vite picks up the new variables.
+
+Once configured, click the **Ask AI** button in the Data Input panel to open the assistant. It summarises the current dataset (including selected columns, subgroup size, and early statistics), auto-requests an initial recommendation, and stays available for follow-up questions.
 
 ## Docker
 

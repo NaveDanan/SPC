@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,6 +10,7 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
 import { prepareHistogramData } from '../../../utils/spcCalculations';
 
@@ -19,11 +20,13 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  zoomPlugin
 );
 
 const Histogram: React.FC = () => {
   const { processedData, selectedColumns, chartOptions } = useAppContext();
+  const chartRef = useRef<ChartJS<'bar'> | null>(null);
   
   if (!processedData || !selectedColumns.length) {
     return <div>No data available</div>;
@@ -58,6 +61,25 @@ const Histogram: React.FC = () => {
     ],
   };
   
+  type ScaleWithMinMax = { min?: number; max?: number };
+  const resetChart = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+      try { chart.resetZoom(); return; } catch { /* noop */ }
+    }
+    chart.options.scales = chart.options.scales || {};
+    if (chart.options.scales.x) {
+      const sx = chart.options.scales.x as unknown as ScaleWithMinMax;
+      delete sx.min; delete sx.max;
+    }
+    if (chart.options.scales.y) {
+      const sy = chart.options.scales.y as unknown as ScaleWithMinMax;
+      delete sy.min; delete sy.max;
+    }
+    chart.update('none');
+  };
+
   const chartOptions1: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -84,6 +106,10 @@ const Histogram: React.FC = () => {
             return `Frequency: ${context.parsed.y}`;
           }
         }
+      },
+      zoom: {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' },
+        pan: { enabled: true, mode: 'xy' },
       }
     },
     scales: {
@@ -105,8 +131,11 @@ const Histogram: React.FC = () => {
   
   return (
     <div>
+      <div className="flex gap-2 justify-end mb-2">
+        <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={resetChart}>Reset View</button>
+      </div>
       <div style={{ height: '400px' }}>
-        <Bar data={chartData} options={chartOptions1} />
+        <Bar ref={chartRef} data={chartData} options={chartOptions1} />
       </div>
       <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
         <div className="bg-blue-50 p-3 rounded-md">

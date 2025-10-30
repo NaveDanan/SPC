@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,6 +11,7 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
 import { computeXbarRComponents, calculateMean, getControlChartConstants } from '../../../utils/spcCalculations';
 import { detectRuleViolations } from '../../../utils/westernElectricRules';
@@ -23,10 +24,13 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
+  zoomPlugin,
 );
 
 const XBarRChart: React.FC = () => {
   const { processedData, selectedColumns, chartOptions, sampleSize } = useAppContext();
+  const xbarChartRef = useRef<any>(null);
+  const rChartRef = useRef<any>(null);
 
   if (!processedData || !selectedColumns.length) {
     return <div>No data available</div>;
@@ -84,19 +88,9 @@ const XBarRChart: React.FC = () => {
   const xbarSeriesPoints = subgroupMeans.map(v => ({ v }));
   const xbarViolations = detectRuleViolations(xbarSeriesPoints as any, 'v', xbarControl);
   
-  // Calculate sigma for R chart (R charts don't follow normal distribution)
-  // The standard approach for R charts is to use the control chart constants
-  // For Western Electric rules on R charts, we need to approximate the sigma
-  // Since R charts are based on range distribution, not normal distribution
-  let rSigmaEstimate: number;
-  if (constants.d3 > 0) {
-    // For larger sample sizes where d3 > 0, we can estimate sigma
-    rSigmaEstimate = (rChartLimits.ucl - rChartLimits.centerLine) / 3;
-  } else {
-    // For small sample sizes (n=2,3,4,5,6) where d3 = 0 (LCL = 0)
-    // We use the relationship with the mean range
-    rSigmaEstimate = rChartLimits.centerLine / 3; // Simple approximation
-  }
+  // Sigma for R-chart (more rigorous): σ_R ≈ d3 * (R̄ / d2)
+  // Falls back to 0 if d3 = 0 (very small n), which matches LCL=0 behaviour
+  const rSigmaEstimate: number = (constants.d3 ?? 0) * (rBar / constants.d2);
   
   const rControl = {
     ucl: rChartLimits.ucl,
@@ -257,7 +251,7 @@ const XBarRChart: React.FC = () => {
     ],
   };
 
-  const xbarOptions: ChartOptions<'line'> = {
+  const xbarOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -275,15 +269,29 @@ const XBarRChart: React.FC = () => {
             return labels;
           }
         }
-      }
+      },
+      zoom: {
+        zoom: {
+          wheel: { enabled: true, modifierKey: 'ctrl' },
+          pinch: { enabled: true },
+          mode: 'xy',
+        },
+        pan: {
+          enabled: true,
+          mode: 'xy',
+        },
+        limits: {
+          x: { min: 0, max: labels.length - 1 },
+        },
+      },
     },
     scales: {
       x: { title: { display: true, text: chartOptions.xAxisLabel || 'Subgroup' } },
       y: { title: { display: true, text: 'Subgroup Mean (X̄)' } },
     },
-  };
+  } as ChartOptions<'line'>;
 
-  const rOptions: ChartOptions<'line'> = {
+  const rOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -301,21 +309,65 @@ const XBarRChart: React.FC = () => {
             return labels;
           }
         }
-      }
+      },
+      zoom: {
+        zoom: {
+          wheel: { enabled: true, modifierKey: 'ctrl' },
+          pinch: { enabled: true },
+          mode: 'xy',
+        },
+        pan: {
+          enabled: true,
+          mode: 'xy',
+        },
+        limits: {
+          x: { min: 0, max: labels.length - 1 },
+        },
+      },
     },
     scales: {
       x: { title: { display: true, text: chartOptions.xAxisLabel || 'Subgroup' } },
       y: { title: { display: true, text: 'Subgroup Range (R)' } },
     },
+  } as ChartOptions<'line'>;
+
+  // Helper for toolbar control
+
+  const resetChart = (chartRef: React.MutableRefObject<any>) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+      try { chart.resetZoom(); return; } catch { /* fallback */ }
+    }
+    chart.options.scales = chart.options.scales || {};
+    if (chart.options.scales.x) {
+      delete (chart.options.scales.x as any).min;
+      delete (chart.options.scales.x as any).max;
+    }
+    if (chart.options.scales.y) {
+      delete (chart.options.scales.y as any).min;
+      delete (chart.options.scales.y as any).max;
+    }
+    chart.update('none');
   };
 
   return (
     <div className="space-y-6">
-      <div style={{ height: '320px' }}>
-        <Line data={xbarData} options={xbarOptions} />
+      <div className="space-y-2" style={{ height: '360px' }}>
+        <div className="flex gap-2 justify-end">
+          <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={() => resetChart(xbarChartRef)}>Reset View</button>
+        </div>
+        <div className="h-[320px]">
+          <Line ref={xbarChartRef} data={xbarData} options={xbarOptions} />
+        </div>
       </div>
-      <div style={{ height: '320px' }}>
-        <Line data={rData} options={rOptions} />
+      <div className="space-y-2" style={{ height: '360px' }}>
+        <div className="flex gap-2 justify-end">
+          <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={() => resetChart(rChartRef)}>Reset View</button>
+        </div>
+        <div className="h-[320px]">
+          <Line ref={rChartRef} data={rData} options={rOptions} />
+        </div>
       </div>
     </div>
   );

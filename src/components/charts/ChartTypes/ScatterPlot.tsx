@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -9,19 +9,20 @@ import {
   Legend,
   ChartOptions,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
 
-ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend, zoomPlugin);
 
 const ScatterPlot: React.FC = () => {
-  const { processedData, selectedColumns, chartOptions } = useAppContext();
+  const { processedData, selectedColumns, chartOptions, xAxisColumn } = useAppContext();
+  const chartRef = useRef<ChartJS<'scatter'> | null>(null);
   
   if (!processedData || !selectedColumns.length || selectedColumns.length < 1) {
     return <div className="text-gray-500">Select at least one data column for scatter plot</div>;
   }
   
   const primaryColumn = selectedColumns[0];
-  const { xAxisColumn } = useAppContext();
   const data = processedData.data;
   
   // For a scatter plot, we need x and y values
@@ -77,6 +78,25 @@ const ScatterPlot: React.FC = () => {
     ],
   };
   
+  type ScaleWithMinMax = { min?: number; max?: number };
+  const resetChart = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === 'function') {
+      try { chart.resetZoom(); return; } catch { /* noop */ }
+    }
+    chart.options.scales = chart.options.scales || {};
+    if (chart.options.scales.x) {
+      const sx = chart.options.scales.x as unknown as ScaleWithMinMax;
+      delete sx.min; delete sx.max;
+    }
+    if (chart.options.scales.y) {
+      const sy = chart.options.scales.y as unknown as ScaleWithMinMax;
+      delete sy.min; delete sy.max;
+    }
+    chart.update('none');
+  };
+
   const chartOptions1: ChartOptions<'scatter'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -98,6 +118,10 @@ const ScatterPlot: React.FC = () => {
             return `${secondaryColumn || 'X'}: ${point.x.toFixed(2)}, ${primaryColumn}: ${point.y.toFixed(2)}`;
           }
         }
+      },
+      zoom: {
+        zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'xy' },
+        pan: { enabled: true, mode: 'xy' },
       }
     },
     scales: {
@@ -118,8 +142,11 @@ const ScatterPlot: React.FC = () => {
   
   return (
     <div>
+      <div className="flex gap-2 justify-end mb-2">
+        <button className="px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 border" onClick={resetChart}>Reset View</button>
+      </div>
       <div style={{ height: '400px' }}>
-        <Scatter data={chartData} options={chartOptions1} />
+        <Scatter ref={chartRef} data={chartData} options={chartOptions1} />
       </div>
       
       <div className="mt-4 bg-blue-50 p-3 rounded-md">

@@ -10,7 +10,18 @@ const computeB3B4 = (c4: number) => {
 };
 
 // Constants for control charts based on sample size (n = 2..25)
-const controlChartConstants: Record<number, any> = {
+type ControlConstants = {
+  a2: number;
+  a3: number;
+  c4: number;
+  b3: number;
+  b4: number;
+  d2: number;
+  d3: number;
+  d4: number;
+};
+
+const controlChartConstants: Record<number, ControlConstants> = {
   2: { a2: 1.880, a3: 2.659, c4: 0.7979, ...computeB3B4(0.7979), d2: 1.128, d3: 0, d4: 3.267 },
   3: { a2: 1.023, a3: 1.954, c4: 0.8862, ...computeB3B4(0.8862), d2: 1.693, d3: 0, d4: 2.574 },
   4: { a2: 0.729, a3: 1.628, c4: 0.9213, ...computeB3B4(0.9213), d2: 2.059, d3: 0, d4: 2.282 },
@@ -128,6 +139,9 @@ export const computeXbarSComponents = (values: number[], sampleSize: number) => 
   for (let i = 0; i < values.length; i += sampleSize) {
     const g = values.slice(i, i + sampleSize);
     if (g.length === sampleSize) subgroups.push(g);
+    else if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[computeXbarSComponents] Ignoring incomplete subgroup of size ${g.length}; expected ${sampleSize}`);
+    }
   }
   const subgroupMeans = subgroups.map(g => calculateMean(g));
   const subgroupStdDevs = subgroups.map(g => calculateStandardDeviation(g));
@@ -157,6 +171,9 @@ export const computeXbarRComponents = (values: number[], sampleSize: number) => 
   for (let i = 0; i < values.length; i += sampleSize) {
     const g = values.slice(i, i + sampleSize);
     if (g.length === sampleSize) subgroups.push(g);
+    else if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[computeXbarRComponents] Ignoring incomplete subgroup of size ${g.length}; expected ${sampleSize}`);
+    }
   }
   const subgroupMeans = subgroups.map(g => calculateMean(g));
   const subgroupRanges = subgroups.map(g => Math.max(...g) - Math.min(...g));
@@ -291,7 +308,7 @@ export const calculateControlLimits = (
       return calculateEWMALimits(numericData);
       
     case 'histogram':
-    case 'scatterPlot':
+    case 'scatterPlot': {
       // For these chart types, just return basic statistics
       const mean = calculateMean(numericData);
       const sigma = calculateStandardDeviation(numericData);
@@ -301,6 +318,7 @@ export const calculateControlLimits = (
         centerLine: mean,
         sigma
       };
+    }
       
     default:
       throw new Error(`Unsupported chart type: ${chartType}`);

@@ -72,3 +72,100 @@
 	/* Hide sheet management chrome in print */
 	.sheet-tabs button, .sheet-tabs div button { display: none !important; }
 }
+
+.rainbow-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(
+    120deg,
+    #0f766e,
+    #14b8a6,
+    #2563eb,
+    #7c3aed,
+    #db2777,
+    #f97316,
+    #0f766e
+  );
+  background-size: 280% 280%;
+  box-shadow: 0 12px 32px rgba(20, 184, 166, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  animation: rainbow-shift 6s linear infinite;
+}
+
+.rainbow-button svg {
+  flex-shrink: 0;
+}
+
+.rainbow-button:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 16px 40px rgba(37, 99, 235, 0.25);
+}
+
+.rainbow-button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
+}
+
+.rainbow-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@keyframes rainbow-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Minimal markdown styles for chat bubbles */
+.markdown-body {
+  line-height: 1.5;
+  white-space: normal; /* allow wrapping */
+}
+.markdown-body p { margin: 0.25rem 0; }
+.markdown-body .mkd-br { height: 0.25rem; }
+.markdown-body a { color: #0f766e; text-decoration: underline; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body code.mkd-inline {
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  background: rgba(15, 118, 110, 0.12);
+}
+.markdown-body pre.mkd-pre {
+  background: #0f766e14;
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+}
+.markdown-body .mkd-code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.9em; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  font-weight: 600;
+  margin: 0.25rem 0 0.15rem;
+}
+.markdown-body h1 { font-size: 1.15rem; }
+.markdown-body h2 { font-size: 1.075rem; }
+.markdown-body h3 { font-size: 1.025rem; }
+.markdown-body ul.mkd-ul, .markdown-body ol.mkd-ol { margin: 0.25rem 0 0.25rem 1.25rem; }
+.markdown-body li { margin: 0.1rem 0; }
+.markdown-body .mkd-math-block { margin: 0.25rem 0; }
+.markdown-body .mkd-table-wrap { overflow-x: auto; margin: 0.25rem 0; }
+.markdown-body table.mkd-table { border-collapse: collapse; width: 100%; font-size: 0.95em; }
+.markdown-body table.mkd-table th,
+.markdown-body table.mkd-table td { border: 1px solid rgba(13, 148, 136, 0.25); padding: 0.25rem 0.5rem; vertical-align: top; }
+.markdown-body table.mkd-table thead th { background: rgba(13, 148, 136, 0.08); font-weight: 600; }

@@ -1,12 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, X, Check } from 'lucide-react';
+import { Upload, FileText, X, Check, Sparkles } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { parseFile } from '../../utils/fileUtils';
+import AiAssistantPanel from '../ai/AiAssistantPanel';
 
 const FileUploadPanel: React.FC = () => {
   const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns, xAxisColumn, setXAxisColumn, sampleSize, setSampleSize } = useAppContext();
   const [isUploading, setIsUploading] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -43,8 +45,20 @@ const FileUploadPanel: React.FC = () => {
   
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-medium text-gray-800">Data Input</h3>
-      
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-lg font-medium text-gray-800">Data Input</h3>
+        <button
+          type="button"
+          className="rainbow-button text-sm"
+          onClick={() => setShowAssistant(true)}
+          aria-pressed={showAssistant}
+          disabled={showAssistant}
+        >
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+          <span>Ask AI</span>
+        </button>
+      </div>
+
       {/* File upload zone */}
       <div 
         {...getRootProps()} 
@@ -155,7 +169,7 @@ const FileUploadPanel: React.FC = () => {
       {/* Example data link */}
       <div className="mt-2 text-sm text-gray-500">
         <p>
-          <button 
+          <button
             className="text-blue-500 hover:text-blue-700 inline-flex items-center"
             onClick={() => {
               // Generate sample data
@@ -180,6 +194,8 @@ const FileUploadPanel: React.FC = () => {
           </button>
         </p>
       </div>
+
+      {showAssistant && <AiAssistantPanel onClose={() => setShowAssistant(false)} />}
     </div>
   );
 };

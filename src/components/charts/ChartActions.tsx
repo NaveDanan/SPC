@@ -11,7 +11,7 @@ const ChartActions: React.FC = () => {
     
     // Add control limits to the exported data
     const { data, controlLimits } = processedData;
-    const exportData = data.map((row, index) => ({
+    const exportData = data.map((row) => ({
       ...row,
       CenterLine: controlLimits.centerLine,
       UCL: controlLimits.ucl,

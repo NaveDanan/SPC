@@ -1,7 +1,9 @@
 export type ChartType = 'individual' | 'pChart' | 'npChart' | 'xBarS' | 'xBarR' | 'ewma' | 'histogram' | 'scatterPlot';
 
+export type Primitive = string | number | boolean | null | undefined;
+
 export interface DataPoint {
-  [key: string]: any;
+  [key: string]: Primitive;
 }
 
 export interface Sheet {

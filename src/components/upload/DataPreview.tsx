@@ -54,9 +54,7 @@ const DataPreview: React.FC = () => {
     }
   }, [rawData]);
 
-  if (!rawData || !rawData.data.length) {
-    return <p className="text-gray-500">No data available. Please upload a file.</p>;
-  }
+  // Keep hooks above unconditional; handle empty state just before render
 
   const columnLetters = Array.from({ length: headers.length }, (_, i) => String.fromCharCode(65 + i));
 
@@ -324,7 +322,7 @@ const DataPreview: React.FC = () => {
   };
 
   const uniqueHeaderName = (base: string) => {
-    let name = base;
+    const name = base;
     const existing = new Set(headers);
     if (!existing.has(name)) return name;
     let i = 2;
@@ -619,6 +617,10 @@ const DataPreview: React.FC = () => {
     const startRow = headerDrag.start;
     setSelection({ start: { row: startRow, col: 0 }, end: { row: rowIndex, col: headers.length - 1 } });
   };
+
+  if (!rawData || !rawData.data.length) {
+    return <p className="text-gray-500">No data available. Please upload a file.</p>;
+  }
 
   return (
     <div 
