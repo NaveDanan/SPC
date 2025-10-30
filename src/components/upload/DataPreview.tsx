@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { Copy, Clipboard, ArrowUpDown, ArrowDown, ArrowUp, Download, Plus, Trash2, Check } from 'lucide-react';
 
 interface CellPosition {
@@ -14,6 +15,7 @@ interface Selection {
 
 const DataPreview: React.FC = () => {
   const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, sampleSize, xAxisColumn, setXAxisColumn } = useAppContext();
+  const { t } = useLanguage();
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [isSelecting, setIsSelecting] = useState(false); // mouse drag selecting
@@ -619,7 +621,7 @@ const DataPreview: React.FC = () => {
   };
 
   if (!rawData || !rawData.data.length) {
-    return <p className="text-gray-500">No data available. Please upload a file.</p>;
+    return <p className="text-gray-500">{t('dataPreview.noData')}</p>;
   }
 
   return (
@@ -632,16 +634,16 @@ const DataPreview: React.FC = () => {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-2 p-2 bg-gray-50 rounded-md border border-gray-200">
         <div className="flex items-center gap-1">
-          <button onClick={handleCopy} className="p-1 hover:bg-gray-200 rounded" title="Copy (Ctrl+C)">
+          <button onClick={handleCopy} className="p-1 hover:bg-gray-200 rounded" title={t('dataPreview.copy')}>
             <Copy size={16} />
           </button>
-          <button onClick={handlePaste} className="p-1 hover:bg-gray-200 rounded" title="Paste (Ctrl+V)">
+          <button onClick={handlePaste} className="p-1 hover:bg-gray-200 rounded" title={t('dataPreview.paste')}>
             <Clipboard size={16} />
           </button>
-          <button onClick={exportSelection} disabled={!selection} className="p-1 hover:bg-gray-200 rounded disabled:opacity-40" title="Export Selection to CSV">
+          <button onClick={exportSelection} disabled={!selection} className="p-1 hover:bg-gray-200 rounded disabled:opacity-40" title={t('dataPreview.export')}>
             <Download size={16} />
           </button>
-          <div className="ml-3 text-xs text-gray-600 min-w-[120px]">{selection && `Selected: ${getSelectionRange()}`}</div>
+          <div className="ml-3 text-xs text-gray-600 min-w-[120px]">{selection && `${t('dataPreview.selected')} ${getSelectionRange()}`}</div>
         </div>
         <div className="flex items-center gap-3 ml-auto text-xs">
           {selectedColumns?.length > 0 && (
@@ -657,9 +659,9 @@ const DataPreview: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-2 ml-2">
-          {unsavedChanges && <span className="text-xs text-amber-600">Unsaved changes</span>}
-          <button onClick={commitChanges} disabled={!unsavedChanges} className="px-2 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-40 flex items-center gap-1" title="Apply changes to dataset">
-            <Check size={14} /> Apply
+          {unsavedChanges && <span className="text-xs text-amber-600">{t('dataPreview.unsaved')}</span>}
+          <button onClick={commitChanges} disabled={!unsavedChanges} className="px-2 py-1 text-xs bg-blue-600 text-white rounded disabled:opacity-40 flex items-center gap-1" title={t('dataPreview.apply')}>
+            <Check size={14} /> {t('dataPreview.apply')}
           </button>
         </div>
       </div>

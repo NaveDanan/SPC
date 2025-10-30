@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { ChartType } from '../../types/DataTypes';
 import ChartTypeInfo from './ChartTypeInfo';
 
@@ -11,6 +12,7 @@ const ControlPanel: React.FC = () => {
     setChartOptions,
     isDataLoaded,
   } = useAppContext();
+  const { t } = useLanguage();
   
   // Chart type options
   const chartTypes: { value: ChartType; label: string }[] = [
@@ -26,12 +28,12 @@ const ControlPanel: React.FC = () => {
   
   return (
     <div>
-      <h3 className="text-lg font-medium text-gray-800 mb-3">Chart Controls</h3>
+      <h3 className="text-lg font-medium text-gray-800 mb-3">{t('controlPanel.title')}</h3>
       
       {/* Chart Type Selection */}
       <div className="mb-4">
         <label htmlFor="chart-type" className="block text-sm font-medium text-gray-700 mb-1">
-          Chart Type
+          {t('controlPanel.chartType')}
         </label>
         <select
           id="chart-type"
@@ -52,7 +54,7 @@ const ControlPanel: React.FC = () => {
       <div className="space-y-4">
         <div>
           <label htmlFor="chart-title" className="block text-sm font-medium text-gray-700 mb-1">
-            Chart Title
+            {t('controlPanel.chartTitle')}
           </label>
           <input
             id="chart-title"
@@ -66,7 +68,7 @@ const ControlPanel: React.FC = () => {
         
         <div>
           <label htmlFor="x-axis-label" className="block text-sm font-medium text-gray-700 mb-1">
-            X-Axis Label
+            {t('controlPanel.xAxisLabel')}
           </label>
           <input
             id="x-axis-label"
@@ -80,7 +82,7 @@ const ControlPanel: React.FC = () => {
         
         <div>
           <label htmlFor="y-axis-label" className="block text-sm font-medium text-gray-700 mb-1">
-            Y-Axis Label
+            {t('controlPanel.yAxisLabel')}
           </label>
           <input
             id="y-axis-label"
@@ -94,7 +96,7 @@ const ControlPanel: React.FC = () => {
         
         {/* Display Options */}
         <div className="pt-2">
-          <p className="text-sm font-medium text-gray-700 mb-2">Display Options</p>
+          <p className="text-sm font-medium text-gray-700 mb-2">{t('controlPanel.displayOptions')}</p>
           
           <div className="flex items-center mb-2">
             <input
@@ -106,7 +108,7 @@ const ControlPanel: React.FC = () => {
               disabled={!isDataLoaded}
             />
             <label htmlFor="show-control-limits" className="ml-2 block text-sm text-gray-700">
-              Show Control Limits
+              {t('controlPanel.showControlLimits')}
             </label>
           </div>
           
@@ -120,7 +122,7 @@ const ControlPanel: React.FC = () => {
               disabled={!isDataLoaded}
             />
             <label htmlFor="show-center-line" className="ml-2 block text-sm text-gray-700">
-              Show Center Line
+              {t('controlPanel.showCenterLine')}
             </label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
@@ -132,7 +134,7 @@ const ControlPanel: React.FC = () => {
                 onChange={(e) => setChartOptions({ ...chartOptions, showSigma1: e.target.checked })}
                 disabled={!isDataLoaded}
               />
-              Show ±1σ
+              {t('controlPanel.showSigma1')}
             </label>
             <label className="inline-flex items-center text-sm">
               <input
@@ -142,7 +144,7 @@ const ControlPanel: React.FC = () => {
                 onChange={(e) => setChartOptions({ ...chartOptions, showSigma2: e.target.checked })}
                 disabled={!isDataLoaded}
               />
-              Show ±2σ
+              {t('controlPanel.showSigma2')}
             </label>
             <label className="inline-flex items-center text-sm">
               <input
@@ -152,7 +154,7 @@ const ControlPanel: React.FC = () => {
                 onChange={(e) => setChartOptions({ ...chartOptions, showSigma3: e.target.checked })}
                 disabled={!isDataLoaded}
               />
-              Show ±3σ
+              {t('controlPanel.showSigma3')}
             </label>
           </div>
           
@@ -166,7 +168,7 @@ const ControlPanel: React.FC = () => {
               disabled={!isDataLoaded}
             />
             <label htmlFor="show-rule-violations" className="ml-2 block text-sm text-gray-700">
-              Highlight Rule Violations
+              {t('controlPanel.highlightViolations')}
             </label>
           </div>
         </div>

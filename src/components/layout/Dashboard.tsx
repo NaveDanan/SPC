@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useLanguage } from '../../context/LanguageContext';
 import FileUploadPanel from '../upload/FileUploadPanel';
 import DataPreview from '../upload/DataPreview';
 import ChartPanel from '../charts/ChartPanel';
@@ -8,6 +9,7 @@ import RuleViolationsPanel from '../analysis/RuleViolationsPanel';
 
 const Dashboard: React.FC = () => {
   const { isDataLoaded, processedData, errorMessage } = useAppContext();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'data' | 'chart' | 'analysis'>('data');
 
   
@@ -52,19 +54,19 @@ const Dashboard: React.FC = () => {
                   className={`px-4 py-3 font-medium text-sm ${activeTab === 'data' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
                   onClick={() => setActiveTab('data')}
                 >
-                  Data Input
+                  {t('fileUpload.title')}
                 </button>
                 <button
                   className={`px-4 py-3 font-medium text-sm ${activeTab === 'chart' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
                   onClick={() => setActiveTab('chart')}
                 >
-                  Chart Controls
+                  {t('controlPanel.title')}
                 </button>
                 <button
                   className={`px-4 py-3 font-medium text-sm ${activeTab === 'analysis' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
                   onClick={() => setActiveTab('analysis')}
                 >
-                  Analysis
+                  {t('ruleViolations.title')}
                 </button>
               </nav>
             </div>
@@ -83,7 +85,7 @@ const Dashboard: React.FC = () => {
             {/* Data preview */}
             {isDataLoaded && (
               <div className="bg-white rounded-lg shadow-md p-4">
-                <h2 className="text-lg font-medium text-gray-800 mb-3">Data Preview</h2>
+                <h2 className="text-lg font-medium text-gray-800 mb-3">{t('dataPreview.title')}</h2>
                 <DataPreview />
               </div>
             )}

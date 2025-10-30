@@ -112,7 +112,21 @@ export const summarizeDatasetForAi = (
   return summary.join('\n');
 };
 
-export const buildAssistantSystemPrompt = (): string => `
+export const buildAssistantSystemPrompt = (language: 'en' | 'he' = 'en'): string => {
+  if (language === 'he') {
+    return `
+אתה יועץ מנוסה בבקרת תהליכים סטטיסטית (SPC).
+נתח נתוני ייצור, בריאות ושירות כדי להמליץ על תרשימי בקרה מתאימים.
+שקול האם הנתונים מייצגים מדידות בודדות, מדידות מקובצות, נתוני תכונה (עבר/נכשל, ספירות), או פרופורציות.
+כאשר משתמש מספק הקשר, המלץ על סוג/י התרשים המובילים והסבר מדוע.
+הדגש הנחות נדרשות, גדלי תת-קבוצות, וכל עיבוד מקדים נדרש.
+אם חסר מידע, שאל שאלות הבהרה תמציתיות לפני שמתחייב להמלצת תרשים.
+ספק תשובות שניתן ליישם עבור מתרגלים המטמיעים SPC בסביבות ייצור.
+שמור על תשובות תמציתיות אך יסודיות, השתמש בנקודות תבליט או רשימות ממוספרות לקריאות.
+`;
+  }
+  
+  return `
 You are an experienced Statistical Process Control (SPC) consultant.
 Analyse manufacturing, healthcare, and service process data to recommend appropriate control charts.
 Consider whether the data represents individual measurements, subgrouped measurements, attribute data (pass/fail, counts), or proportions.
@@ -122,13 +136,30 @@ If information is missing, ask concise clarifying questions before committing to
 Provide answers that are actionable for practitioners implementing SPC in production environments.
 Keep responses concise but thorough, using bullet points or numbered lists for readability.
 `;
+};
 
 export const buildInitialUserPrompt = (
   summary: string,
   selectedChartType: ChartType,
   selectedChartLabel?: string,
+  language: 'en' | 'he' = 'en',
 ): string => {
   const friendlyName = selectedChartLabel ?? selectedChartType;
+  
+  if (language === 'he') {
+    return `
+להלן סיכום מערך הנתונים הנוכחי מכלי SPC:
+
+${summary}
+
+המשתמש בחר כעת "${friendlyName}" בממשק המשתמש. בהתבסס על פרטי מערך הנתונים ושיטות עבודה מומלצות של SPC, אילו תרשימי בקרה כדאי להם לשקול? אנא:
+1. המלץ על סוג/י התרשים המתאימים ביותר.
+2. הסבר מדוע, תוך התייחסות לגודל תת-קבוצה, סוג נתונים (משתנה לעומת תכונה), ושיקולי יציבות.
+3. פרט כל שלב הכנת נתונים או אימות נדרש.
+4. הצע שאלת הבהרה אחת או שתיים אם המידע הזמין אינו מספיק.
+`;
+  }
+  
   return `
 Here is the current dataset summary from the SPC tool:
 
@@ -142,10 +173,22 @@ The user currently has "${friendlyName}" selected in the UI. Based on the datase
 `;
 };
 
-export const buildDatasetUpdatePrompt = (summary: string): string => `
+export const buildDatasetUpdatePrompt = (summary: string, language: 'en' | 'he' = 'en'): string => {
+  if (language === 'he') {
+    return `
+מערך הנתונים עודכן. העריך מחדש את המלצת ה-SPC באמצעות הסיכום החדש:
+
+${summary}
+
+אנא הדגש מה השתנה, האם סוג התרשים המומלץ צריך להשתנות, וכל שיקול חדש שהמתרגל צריך להיות מודע אליו.
+`;
+  }
+  
+  return `
 The dataset has been updated. Re-evaluate the SPC recommendation using the new summary:
 
 ${summary}
 
 Please highlight what changed, whether the recommended chart type should change, and any new considerations the practitioner should be aware of.
 `;
+};

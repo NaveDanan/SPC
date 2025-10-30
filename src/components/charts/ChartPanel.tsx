@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useLanguage } from '../../context/LanguageContext';
 import IndividualChart from './ChartTypes/IndividualChart';
 import PChart from './ChartTypes/PChart';
 import NPChart from './ChartTypes/NPChart';
@@ -18,12 +19,13 @@ const ChartPanel: React.FC = () => {
     isProcessing,
     selectedColumns 
   } = useAppContext();
+  const { t } = useLanguage();
   
   if (isProcessing) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
-        <p>Processing data...</p>
+        <p>{t('chartPanel.processing')}</p>
       </div>
     );
   }
@@ -31,7 +33,7 @@ const ChartPanel: React.FC = () => {
   if (!processedData || selectedColumns.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-        <p>Select data and chart type to generate a chart</p>
+        <p>{t('chartPanel.selectData')}</p>
       </div>
     );
   }
@@ -77,31 +79,31 @@ const ChartPanel: React.FC = () => {
       {processedData && (
         <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 rounded-md p-3">
-            <p className="text-xs text-blue-700 font-medium">Mean (CL)</p>
+            <p className="text-xs text-blue-700 font-medium">{t('chartPanel.mean')}</p>
             <p className="text-lg font-semibold">{processedData.controlLimits.centerLine.toFixed(3)}</p>
           </div>
           <div className="bg-red-50 rounded-md p-3">
-            <p className="text-xs text-red-700 font-medium">Upper Control Limit</p>
+            <p className="text-xs text-red-700 font-medium">{t('chartPanel.ucl')}</p>
             <p className="text-lg font-semibold">{processedData.controlLimits.ucl.toFixed(3)}</p>
           </div>
           <div className="bg-red-50 rounded-md p-3">
-            <p className="text-xs text-red-700 font-medium">Lower Control Limit</p>
+            <p className="text-xs text-red-700 font-medium">{t('chartPanel.lcl')}</p>
             <p className="text-lg font-semibold">{processedData.controlLimits.lcl.toFixed(3)}</p>
           </div>
           <div className="bg-purple-50 rounded-md p-3">
-            <p className="text-xs text-purple-700 font-medium">Standard Deviation</p>
+            <p className="text-xs text-purple-700 font-medium">{t('chartPanel.stdDev')}</p>
             <p className="text-lg font-semibold">{processedData.controlLimits.sigma.toFixed(3)}</p>
           </div>
             <div className="bg-amber-50 rounded-md p-3">
-            <p className="text-xs text-amber-700 font-medium">Cpl</p>
+            <p className="text-xs text-amber-700 font-medium">{t('chartPanel.cpl')}</p>
             <p className="text-lg font-semibold">{cpl}</p>
           </div>
           <div className="bg-stone-100 rounded-md p-3">
-            <p className="text-xs text-stone-700 font-medium">Cpu</p>
+            <p className="text-xs text-stone-700 font-medium">{t('chartPanel.cpu')}</p>
             <p className="text-lg font-semibold">{cpu}</p>
           </div>
             <div className="bg-emerald-50 rounded-md p-3">
-            <p className="text-xs text-slate-700 font-medium">Cpk</p>
+            <p className="text-xs text-slate-700 font-medium">{t('chartPanel.cpk')}</p>
             <p className="text-lg font-semibold">{cpk}</p>
           </div>
         </div>

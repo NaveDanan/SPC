@@ -2,11 +2,13 @@ import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, X, Check, Sparkles } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { parseFile } from '../../utils/fileUtils';
 import AiAssistantPanel from '../ai/AiAssistantPanel';
 
 const FileUploadPanel: React.FC = () => {
   const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns, xAxisColumn, setXAxisColumn, sampleSize, setSampleSize } = useAppContext();
+  const { t } = useLanguage();
   const [isUploading, setIsUploading] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   
@@ -46,7 +48,7 @@ const FileUploadPanel: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-medium text-gray-800">Data Input</h3>
+        <h3 className="text-lg font-medium text-gray-800">{t('fileUpload.title')}</h3>
         <button
           type="button"
           className="rainbow-button text-sm"
@@ -55,7 +57,7 @@ const FileUploadPanel: React.FC = () => {
           disabled={showAssistant}
         >
           <Sparkles className="h-4 w-4" aria-hidden="true" />
-          <span>Ask AI</span>
+          <span>{t('fileUpload.askAI')}</span>
         </button>
       </div>
 
@@ -70,7 +72,7 @@ const FileUploadPanel: React.FC = () => {
         {isUploading ? (
           <div className="flex flex-col items-center text-gray-500">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
-            <p>Uploading and parsing file...</p>
+            <p>{t('fileUpload.uploading')}</p>
           </div>
         ) : rawData ? (
           <div className="flex items-center justify-center text-green-600">
@@ -78,7 +80,7 @@ const FileUploadPanel: React.FC = () => {
             <div className="text-left">
               <p className="font-medium">{rawData.fileName}</p>
               <p className="text-sm text-gray-500">
-                {rawData.data.length} rows, {rawData.headers.length} columns
+                {rawData.data.length} {t('fileUpload.rows')}, {rawData.headers.length} {t('fileUpload.columns')}
               </p>
             </div>
             <button 
@@ -94,8 +96,8 @@ const FileUploadPanel: React.FC = () => {
         ) : (
           <div className="flex flex-col items-center text-gray-500">
             <Upload size={36} className="mb-2 text-gray-400" />
-            <p className="font-medium">Drag & drop a file here, or click to select</p>
-            <p className="text-sm mt-1">Supports CSV, XLS, XLSX</p>
+            <p className="font-medium">{t('fileUpload.dragDrop')}</p>
+            <p className="text-sm mt-1">{t('fileUpload.supports')}</p>
           </div>
         )}
       </div>
@@ -106,7 +108,7 @@ const FileUploadPanel: React.FC = () => {
 
           <div>
             <label htmlFor="x-axis-column" className="block text-sm font-medium text-gray-700 mb-1">
-              Select X-Axis Column (optional)
+              {t('fileUpload.selectXAxis')}
             </label>
             <select
               id="x-axis-column"
@@ -117,18 +119,18 @@ const FileUploadPanel: React.FC = () => {
                 setXAxisColumn(x || null);
               }}
             >
-              <option value="">— Use row index —</option>
+              <option value="">{t('fileUpload.useRowIndex')}</option>
               {rawData.headers.map((header) => (
                 <option key={header} value={header}>
                   {header}
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">If set, charts use this column for X values (e.g., Date).</p>
+            <p className="text-xs text-gray-500 mt-1">{t('fileUpload.xAxisHint')}</p>
           </div>
           <div>
             <label htmlFor="data-column" className="block text-sm font-medium text-gray-700 mb-1">
-              Select Y-Value Column (used for SPC)
+              {t('fileUpload.selectYValue')}
             </label>
             <select
               id="data-column"
@@ -148,7 +150,7 @@ const FileUploadPanel: React.FC = () => {
           
           <div>
             <label htmlFor="sample-size" className="block text-sm font-medium text-gray-700 mb-1">
-              Sample Size (for X-bar charts)
+              {t('fileUpload.sampleSize')}
             </label>
             <input
               id="sample-size"
@@ -160,7 +162,7 @@ const FileUploadPanel: React.FC = () => {
               onChange={(e) => setSampleSize(Math.max(2, Math.min(25, parseInt(e.target.value) || 5)))}
             />
             <p className="text-xs text-gray-500 mt-1">
-              For X-bar charts (S or R), data will be grouped into subgroups of this size
+              {t('fileUpload.sampleSizeHint')}
             </p>
           </div>
         </div>
@@ -190,7 +192,7 @@ const FileUploadPanel: React.FC = () => {
             }}
           >
             <FileText size={14} className="mr-1" />
-            Don't have data? Use example dataset
+            {t('fileUpload.noData')}
           </button>
         </p>
       </div>
