@@ -1,5 +1,12 @@
 export type AiMessageRole = 'user' | 'assistant';
 
+export interface AiChatAttachment {
+  name: string;
+  type?: string;
+  rows?: number;
+  columns?: number;
+}
+
 export interface AiChatMessage {
   id: string;
   role: AiMessageRole;
@@ -9,4 +16,5 @@ export interface AiChatMessage {
   tokenCount?: number;
   responseTimeMs?: number;
   parentUserId?: string;
+  attachment?: AiChatAttachment;
 }

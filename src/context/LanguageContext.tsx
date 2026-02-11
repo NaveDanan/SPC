@@ -75,6 +75,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.welcomeMessage': 'Upload a CSV or Excel file and I will recommend the most appropriate SPC control chart. You can also ask follow-up questions here.',
     'ai.datasetCleared': 'It looks like the dataset was cleared. Upload a new file when you are ready and I will refresh my recommendation.',
     'ai.serviceError': 'I ran into a problem contacting the AI service: ',
+    'ai.uploadedDataset': 'Uploaded dataset',
     
     // File Upload Panel
     'fileUpload.title': 'Data Input',
@@ -209,6 +210,7 @@ const translations: Record<Language, Record<string, string>> = {
     'ai.welcomeMessage': 'העלה קובץ CSV או Excel ואני אמליץ על תרשים הבקרה SPC המתאים ביותר. אתה יכול גם לשאול שאלות המשך כאן.',
     'ai.datasetCleared': 'נראה שמערך הנתונים נוקה. העלה קובץ חדש כשתהיה מוכן ואני אעדכן את ההמלצה שלי.',
     'ai.serviceError': 'נתקלתי בבעיה בהתקשרות לשירות ה-AI: ',
+    'ai.uploadedDataset': 'מערך נתונים שהועלה',
     
     // File Upload Panel
     'fileUpload.title': 'קלט נתונים',
