@@ -3,14 +3,21 @@ import { Loader2, Send, Sparkles, X, RefreshCcw, Hash, Clock, Copy, Download, Ed
 import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import {
+  buildAgentAutopilotPrompt,
   buildAssistantSystemPrompt,
   buildDatasetUpdatePrompt,
   buildInitialUserPrompt,
   summarizeDatasetForAi,
 } from '../../utils/aiHelpers';
-import type { AiChatAttachment, AiChatMessage } from '../../types/AiTypes';
+import type { AiChatAttachment, AiChatMessage, AiWorksheetOption } from '../../types/AiTypes';
 import { chartMeta } from '../../types/chartMeta';
 import { MarkdownText } from '../common/MarkdownText';
+import {
+  AgentRecommendation,
+  extractAgentRecommendationFromMessage,
+  validateAgentRecommendationAgainstHeaders,
+} from '../../utils/agentMode';
+import { resolveAiRuntimeConfig } from '../../utils/runtimeConfig';
 
 interface AiAssistantPanelProps {
   onClose: () => void;
@@ -24,6 +31,13 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     xAxisColumn,
     sampleSize,
     selectedChartType,
+    chartOptions,
+    setSelectedChartType,
+    setChartOptions,
+    setSelectedColumns,
+    setXAxisColumn,
+    setSampleSize,
+    setActiveSheetIndex,
   } = useAppContext();
   
   const { language, t } = useLanguage();
@@ -35,11 +49,34 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
   const [hasInitialized, setHasInitialized] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [agentModeEnabled, setAgentModeEnabled] = useState(false);
+  const [agentFeedback, setAgentFeedback] = useState<string | null>(null);
+  const [selectedAiSheetIndex, setSelectedAiSheetIndex] = useState<number | null>(null);
   const conversationRef = useRef<AiChatMessage[]>([]);
   const lastSummaryRef = useRef<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const parsedAssistantIdsRef = useRef<Set<string>>(new Set());
+  const sheetSelectionContextRef = useRef<string | null>(null);
+  const agentAutopilotContextRef = useRef<string | null>(null);
+  const suppressNextAgentAutopilotRef = useRef(false);
+  const requestInFlightRef = useRef(false);
 
-  const systemPrompt = useMemo(() => buildAssistantSystemPrompt(language), [language]);
+  const worksheetOptions = useMemo<AiWorksheetOption[]>(() => {
+    if (!rawData?.sheets?.length) {
+      return [];
+    }
+
+    return rawData.sheets.map((sheet, index) => ({
+      index,
+      name: sheet.name,
+      rows: sheet.data.length,
+      columns: sheet.headers.length,
+    }));
+  }, [rawData]);
+
+  const requiresWorksheetSelection = Boolean(rawData?.sheets && rawData.sheets.length > 1 && selectedAiSheetIndex === null);
+
+  const systemPrompt = useMemo(() => buildAssistantSystemPrompt(language, agentModeEnabled), [agentModeEnabled, language]);
   const friendlyChartName = useMemo(
     () => chartMeta[selectedChartType]?.name ?? selectedChartType,
     [selectedChartType],
@@ -75,6 +112,34 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     return Math.max(1, Math.ceil(wordCount * 1.35));
   };
 
+  const extractAiErrorMessage = async (response: Response): Promise<string> => {
+    const fallback = `AI service request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`;
+
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const payload = await response.json();
+        const message =
+          payload?.error?.message
+          ?? payload?.error
+          ?? payload?.detail
+          ?? payload?.message;
+        if (typeof message === 'string' && message.trim()) {
+          return message.trim();
+        }
+      } else {
+        const bodyText = (await response.text()).trim();
+        if (bodyText) {
+          return bodyText;
+        }
+      }
+    } catch {
+      // ignore parse errors and use fallback
+    }
+
+    return fallback;
+  };
+
   const handleCopy = async (content: string) => {
     try {
       await navigator.clipboard.writeText(content);
@@ -95,6 +160,117 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     URL.revokeObjectURL(url);
   };
 
+  const stripAgentRecommendationJson = useCallback((content: string): string => {
+    const jsonFenceMatch = content.match(/```json\s*([\s\S]*?)```/i);
+    if (!jsonFenceMatch?.[1]) {
+      return content;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonFenceMatch[1]);
+      if (!parsed || typeof parsed !== 'object' || !('recommendation' in parsed)) {
+        return content;
+      }
+
+      const stripped = content.replace(/```json\s*[\s\S]*?```/i, '').trim();
+      return stripped || t('ai.agentApplied');
+    } catch {
+      return content;
+    }
+  }, [t]);
+
+  const applyAgentRecommendation = useCallback((recommendation: AgentRecommendation) => {
+    const headers = rawData?.headers ?? [];
+    const validated = validateAgentRecommendationAgainstHeaders(recommendation, headers);
+    const applied: string[] = [];
+
+    if (validated.chartType) {
+      setSelectedChartType(validated.chartType);
+      applied.push(t('ai.agentProposedChart'));
+    }
+
+    if (validated.yColumns.length > 0) {
+      setSelectedColumns(validated.yColumns);
+      applied.push(t('ai.agentProposedY'));
+    }
+
+    if (validated.xAxisColumn !== undefined) {
+      setXAxisColumn(validated.xAxisColumn);
+      applied.push(t('ai.agentProposedX'));
+    }
+
+    if (typeof validated.sampleSize === 'number') {
+      setSampleSize(validated.sampleSize);
+      applied.push(t('ai.agentProposedSample'));
+    }
+
+    if (validated.chartLabel !== undefined || validated.zAxisLabel !== undefined || validated.yAxisLabel !== undefined) {
+      setChartOptions({
+        ...chartOptions,
+        ...(validated.chartLabel !== undefined ? { title: validated.chartLabel } : {}),
+        ...(validated.zAxisLabel !== undefined ? { xAxisLabel: validated.zAxisLabel } : {}),
+        ...(validated.yAxisLabel !== undefined ? { yAxisLabel: validated.yAxisLabel } : {}),
+      });
+
+      if (validated.chartLabel !== undefined) {
+        applied.push(t('controlPanel.chartTitle'));
+      }
+      if (validated.zAxisLabel !== undefined) {
+        applied.push(t('controlPanel.xAxisLabel'));
+      }
+      if (validated.yAxisLabel !== undefined) {
+        applied.push(t('controlPanel.yAxisLabel'));
+      }
+    }
+
+    setAgentFeedback(
+      applied.length
+        ? `${t('ai.agentApplied')} ${applied.join(', ')}`
+        : t('ai.agentNoChangeDetected'),
+    );
+
+    if (applied.length > 0) {
+      suppressNextAgentAutopilotRef.current = true;
+    }
+  }, [chartOptions, rawData?.headers, setChartOptions, setSampleSize, setSelectedChartType, setSelectedColumns, setXAxisColumn, t]);
+
+  const appendWorksheetSelectionMessage = useCallback(() => {
+    if (!rawData?.sheets || rawData.sheets.length <= 1) {
+      return;
+    }
+
+    const lastMessage = conversationRef.current[conversationRef.current.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.worksheetOptions?.length) {
+      return;
+    }
+
+    const sheetMessage: AiChatMessage = {
+      id: `assistant-sheets-${Date.now()}`,
+      role: 'assistant',
+      content: t('ai.selectWorksheetPrompt'),
+      createdAt: Date.now(),
+      autoGenerated: true,
+      worksheetOptions,
+    };
+
+    const updated = [...conversationRef.current, sheetMessage];
+    conversationRef.current = updated;
+    setMessages(updated);
+  }, [rawData?.sheets, t, worksheetOptions]);
+
+  const handleWorksheetSelect = useCallback((sheetIndex: number) => {
+    if (!rawData?.sheets || sheetIndex < 0 || sheetIndex >= rawData.sheets.length) {
+      return;
+    }
+
+    setActiveSheetIndex(sheetIndex);
+    setSelectedAiSheetIndex(sheetIndex);
+    setAgentFeedback(null);
+    appendAssistantMessage(
+      `${t('ai.worksheetSelectedPrefix')}: ${rawData.sheets[sheetIndex].name}`,
+    );
+  }, [appendAssistantMessage, rawData?.sheets, setActiveSheetIndex, t]);
+
   const sendMessage = useCallback(
     async (
       content: string,
@@ -104,10 +280,22 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         attachment?: AiChatAttachment;
       },
     ) => {
+      if (requiresWorksheetSelection) {
+        setError(null);
+        appendWorksheetSelectionMessage();
+        return;
+      }
+
       const trimmed = content.trim();
       if (!trimmed) {
         return;
       }
+
+      if (requestInFlightRef.current) {
+        return;
+      }
+
+      requestInFlightRef.current = true;
 
       const userMessage: AiChatMessage = {
         id: `user-${Date.now()}`,
@@ -128,16 +316,15 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       setIsLoading(true);
       setError(null);
 
-      const apiUrl = import.meta.env.VITE_AI_API_URL as string | undefined;
-      const apiKey = import.meta.env.VITE_AI_API_KEY as string | undefined;
-      const model = (import.meta.env.VITE_AI_MODEL as string | undefined) ?? 'gpt-4o-mini';
+      const { apiUrl, apiKey, model } = resolveAiRuntimeConfig();
 
-      if (!apiUrl || !apiKey) {
+      if (!apiUrl || !apiKey || !model) {
         setError(t('ai.notConfigured'));
         appendAssistantMessage(
           t('ai.configError'),
         );
         setIsLoading(false);
+        requestInFlightRef.current = false;
         return;
       }
 
@@ -145,6 +332,8 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       const endpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
         ? trimmedUrl
         : `${trimmedUrl}/v1/chat/completions`;
+      const normalizedModel = model.trim().toLowerCase();
+      const shouldSendTemperature = !normalizedModel.startsWith('gpt');
 
       try {
         const startTime = Date.now();
@@ -163,7 +352,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
                 content: message.content,
               })),
             ],
-            temperature: 0.2,
+            ...(shouldSendTemperature ? { temperature: 0.2 } : {}),
             stream: true,
           }),
         });
@@ -246,11 +435,10 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           conversationRef.current = [...conversationRef.current];
           setMessages([...conversationRef.current]);
         } else {
-          const payload = await response.json();
           if (!response.ok) {
-            const message = payload?.error?.message ?? response.statusText;
-            throw new Error(message);
+            throw new Error(await extractAiErrorMessage(response));
           }
+          const payload = await response.json();
           const assistantText: string | undefined = payload?.choices?.[0]?.message?.content?.trim();
           if (!assistantText) {
             throw new Error('The AI service returned an empty response.');
@@ -275,9 +463,10 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         appendAssistantMessage(`${t('ai.serviceError')}${message}`);
       } finally {
         setIsLoading(false);
+        requestInFlightRef.current = false;
       }
     },
-    [appendAssistantMessage, systemPrompt, t],
+    [appendAssistantMessage, appendWorksheetSelectionMessage, requiresWorksheetSelection, systemPrompt, t],
   );
 
   const datasetAttachment = useMemo<AiChatAttachment | undefined>(() => {
@@ -292,17 +481,24 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
 
   const regenerateAssistantForUserIndex = useCallback(
     async (userIndex: number, assistantIndex: number) => {
-      const apiUrl = import.meta.env.VITE_AI_API_URL as string | undefined;
-      const apiKey = import.meta.env.VITE_AI_API_KEY as string | undefined;
-      const model = (import.meta.env.VITE_AI_MODEL as string | undefined) ?? 'gpt-4o-mini';
-      if (!apiUrl || !apiKey) {
-        setError('AI assistant is not configured. Please set VITE_AI_API_URL and VITE_AI_API_KEY.');
+      if (requestInFlightRef.current) {
+        return;
+      }
+
+      requestInFlightRef.current = true;
+
+      const { apiUrl, apiKey, model } = resolveAiRuntimeConfig();
+      if (!apiUrl || !apiKey || !model) {
+        setError(t('ai.notConfigured'));
+        requestInFlightRef.current = false;
         return;
       }
       const trimmedUrl = apiUrl.replace(/\/$/, '');
       const endpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
         ? trimmedUrl
         : `${trimmedUrl}/v1/chat/completions`;
+      const normalizedModel = model.trim().toLowerCase();
+      const shouldSendTemperature = !normalizedModel.startsWith('gpt');
 
       const convo = conversationRef.current;
       const targetAssistant = convo[assistantIndex];
@@ -327,7 +523,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
               { role: 'system', content: systemPrompt },
               ...subset.map((m) => ({ role: m.role, content: m.content })),
             ],
-            temperature: 0.2,
+            ...(shouldSendTemperature ? { temperature: 0.2 } : {}),
             stream: true,
           }),
         });
@@ -396,11 +592,10 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           conversationRef.current = [...conversationRef.current];
           setMessages([...conversationRef.current]);
         } else {
-          const payload = await response.json();
           if (!response.ok) {
-            const message = payload?.error?.message ?? response.statusText;
-            throw new Error(message);
+            throw new Error(await extractAiErrorMessage(response));
           }
+          const payload = await response.json();
           const assistantText: string | undefined = payload?.choices?.[0]?.message?.content?.trim();
           if (!assistantText) {
             throw new Error('The AI service returned an empty response.');
@@ -415,9 +610,10 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         setError(message);
       } finally {
         setIsLoading(false);
+        requestInFlightRef.current = false;
       }
     },
-    [systemPrompt],
+    [systemPrompt, t],
   );
 
   const handleRegenerate = (message: AiChatMessage) => {
@@ -466,8 +662,51 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
   };
 
   useEffect(() => {
+    const selectionContext = rawData?.sheets?.length
+      ? `${rawData.fileName || 'dataset'}::${rawData.sheets.map((sheet) => sheet.name).join('|')}`
+      : rawData?.fileName ?? null;
+
+    if (sheetSelectionContextRef.current === selectionContext) {
+      return;
+    }
+
+    sheetSelectionContextRef.current = selectionContext;
+
+    if (rawData?.sheets && rawData.sheets.length > 1) {
+      setSelectedAiSheetIndex(null);
+      appendWorksheetSelectionMessage();
+    } else {
+      setSelectedAiSheetIndex(rawData ? (rawData.activeSheetIndex ?? 0) : null);
+    }
+  }, [appendWorksheetSelectionMessage, rawData]);
+
+  useEffect(() => {
     if (!hasInitialized) {
       if (rawData && datasetSummary) {
+        if (rawData.sheets && rawData.sheets.length > 1 && selectedAiSheetIndex === null) {
+          const welcomeMessage: AiChatMessage = {
+            id: 'assistant-welcome-multisheet',
+            role: 'assistant',
+            content: t('ai.welcomeMessage'),
+            createdAt: Date.now(),
+            autoGenerated: true,
+          };
+
+          const sheetMessage: AiChatMessage = {
+            id: `assistant-sheets-initial-${Date.now()}`,
+            role: 'assistant',
+            content: t('ai.selectWorksheetPrompt'),
+            createdAt: Date.now(),
+            autoGenerated: true,
+            worksheetOptions,
+          };
+
+          conversationRef.current = [welcomeMessage, sheetMessage];
+          setMessages([welcomeMessage, sheetMessage]);
+          setHasInitialized(true);
+          return;
+        }
+
         lastSummaryRef.current = datasetSummary;
         setHasInitialized(true);
         void sendMessage(buildInitialUserPrompt(datasetSummary, selectedChartType, friendlyChartName, language), {
@@ -489,10 +728,18 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         setHasInitialized(true);
       }
     }
-  }, [datasetAttachment, datasetSummary, friendlyChartName, hasInitialized, rawData, selectedChartType, sendMessage, language, t]);
+  }, [datasetAttachment, datasetSummary, friendlyChartName, hasInitialized, rawData, selectedAiSheetIndex, selectedChartType, sendMessage, language, t, worksheetOptions]);
 
   useEffect(() => {
     if (!hasInitialized || !datasetSummary) {
+      return;
+    }
+
+    if (agentModeEnabled) {
+      return;
+    }
+
+    if (rawData?.sheets && rawData.sheets.length > 1 && selectedAiSheetIndex === null) {
       return;
     }
 
@@ -506,7 +753,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       autoGenerated: true,
       attachment: datasetAttachment,
     });
-  }, [datasetAttachment, datasetSummary, hasInitialized, sendMessage, language]);
+  }, [agentModeEnabled, datasetAttachment, datasetSummary, hasInitialized, language, rawData?.sheets, selectedAiSheetIndex, sendMessage]);
 
   useEffect(() => {
     if (!hasInitialized) {
@@ -533,6 +780,79 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     }
     scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    if (!agentModeEnabled) {
+      setAgentFeedback(null);
+      agentAutopilotContextRef.current = null;
+      suppressNextAgentAutopilotRef.current = false;
+      return;
+    }
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== 'assistant') {
+        continue;
+      }
+      if (parsedAssistantIdsRef.current.has(message.id)) {
+        continue;
+      }
+      if (isLoading && message.tokenCount === undefined && message.responseTimeMs === undefined) {
+        continue;
+      }
+
+      parsedAssistantIdsRef.current.add(message.id);
+      const recommendation = extractAgentRecommendationFromMessage(message.content);
+      if (!recommendation) {
+        continue;
+      }
+
+      const validated = validateAgentRecommendationAgainstHeaders(recommendation, rawData?.headers ?? []);
+      applyAgentRecommendation(validated);
+      break;
+    }
+  }, [agentModeEnabled, applyAgentRecommendation, isLoading, messages, rawData?.headers]);
+
+  useEffect(() => {
+    parsedAssistantIdsRef.current.clear();
+  }, [agentModeEnabled]);
+
+  useEffect(() => {
+    if (!agentModeEnabled || !hasInitialized || !datasetSummary || requiresWorksheetSelection || isLoading) {
+      return;
+    }
+
+    const contextSignature = `${selectedAiSheetIndex ?? -1}::${datasetSummary}`;
+
+    if (suppressNextAgentAutopilotRef.current) {
+      suppressNextAgentAutopilotRef.current = false;
+      agentAutopilotContextRef.current = contextSignature;
+      return;
+    }
+
+    if (agentAutopilotContextRef.current === contextSignature) {
+      return;
+    }
+
+    agentAutopilotContextRef.current = contextSignature;
+    void sendMessage(buildAgentAutopilotPrompt(datasetSummary, selectedChartType, friendlyChartName, language), {
+      skipInputReset: true,
+      autoGenerated: true,
+      attachment: datasetAttachment,
+    });
+  }, [
+    agentModeEnabled,
+    datasetAttachment,
+    datasetSummary,
+    friendlyChartName,
+    hasInitialized,
+    isLoading,
+    language,
+    requiresWorksheetSelection,
+    selectedAiSheetIndex,
+    selectedChartType,
+    sendMessage,
+  ]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -565,10 +885,17 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         </div>
       )}
 
+      {agentFeedback && (
+        <div className="border-b border-teal-100 bg-teal-50 px-4 py-2 text-xs text-teal-700">
+          {agentFeedback}
+        </div>
+      )}
+
       <div ref={scrollContainerRef} className="max-h-80 space-y-3 overflow-y-auto px-4 py-4 text-sm">
         {messages.map((message) => {
           const isAssistant = message.role === 'assistant';
           const hasAttachment = Boolean(message.attachment);
+          const hasWorksheetOptions = Boolean(message.worksheetOptions?.length);
           const bubbleBase = isAssistant
             ? 'bg-teal-50 text-gray-700 ring-1 ring-inset ring-teal-100 rounded-bl-none'
             : 'bg-teal-600 text-white rounded-br-none';
@@ -591,6 +918,9 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           }
           const attachmentMeta = attachmentMetaParts.join(' · ');
           const showEdit = !isAssistant && !message.autoGenerated && !hasAttachment;
+          const visibleAssistantContent = isAssistant && agentModeEnabled
+            ? stripAgentRecommendationJson(message.content)
+            : message.content;
           return (
             <div key={message.id} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
               <div className="relative group max-w-[90%]">
@@ -598,7 +928,23 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
                   className={`relative rounded-2xl ${bubblePadding} shadow-sm ${bubbleBase} ${bubbleWhitespace}`}
                 >
                   {isAssistant ? (
-                    <MarkdownText text={message.content} />
+                    <>
+                      <MarkdownText text={visibleAssistantContent} />
+                      {hasWorksheetOptions && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {message.worksheetOptions?.map((option) => (
+                            <button
+                              key={`${message.id}-${option.index}`}
+                              type="button"
+                              onClick={() => handleWorksheetSelect(option.index)}
+                              className="rounded-full border border-teal-300 bg-white px-3 py-1 text-xs font-medium text-teal-700 transition hover:bg-teal-50"
+                            >
+                              {option.name} ({option.rows} {t('fileUpload.rows')}, {option.columns} {t('fileUpload.columns')})
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   ) : hasAttachment ? (
                     <div className="flex items-center gap-3 rounded-xl border border-white/30 bg-white/10 px-3 py-2">
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20 text-white">
@@ -732,7 +1078,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !editingId) {
               event.preventDefault();
-              void sendMessage(inputValue);
+              event.currentTarget.form?.requestSubmit();
             }
           }}
           disabled={isLoading || !!editingId}
@@ -741,7 +1087,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           <button
             type="submit"
             className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isLoading || !!editingId || !inputValue.trim()}
+            disabled={isLoading || !!editingId || !inputValue.trim() || requiresWorksheetSelection}
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -751,6 +1097,21 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
             <span>{isLoading ? t('ai.sending') : t('ai.send')}</span>
           </button>
         </div>
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition ${agentModeEnabled ? 'bg-teal-600 text-white' : 'bg-teal-50 text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100'}`}
+            onClick={() => {
+              setAgentModeEnabled((prev) => !prev);
+              setAgentFeedback(null);
+            }}
+            aria-pressed={agentModeEnabled}
+          >
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{agentModeEnabled ? t('ai.agentModeOn') : t('ai.agentModeOff')}</span>
+          </button>
+        </div>
+        <p className="mt-1 text-right text-[11px] text-teal-700/80">{t('ai.agentHint')}</p>
       </form>
     </div>
   );

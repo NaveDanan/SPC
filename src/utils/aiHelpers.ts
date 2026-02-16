@@ -112,7 +112,59 @@ export const summarizeDatasetForAi = (
   return summary.join('\n');
 };
 
-export const buildAssistantSystemPrompt = (language: 'en' | 'he' = 'en'): string => {
+export const buildAssistantSystemPrompt = (language: 'en' | 'he' = 'en', agentMode = false): string => {
+  const agentModeInstructionEn = agentMode
+    ? `
+Additional Agent Mode output requirement:
+- After your bullet response, include one JSON block fenced with \`\`\`json.
+- JSON schema:
+  {
+    "recommendation": {
+      "chartType": "individual|pChart|npChart|xBarS|xBarR|ewma|histogram|scatterPlot|null",
+      "yColumns": ["string", "..."],
+      "yColumn": "string|null",
+      "xAxisColumn": "string|null",
+      "sampleSize": number|null,
+      "chartLabel": "string|null",
+      "zAxisLabel": "string|null",
+      "yAxisLabel": "string|null",
+      "reason": "short explanation"
+    }
+  }
+- Prefer yColumns for one or multiple Y columns; keep yColumn only for backward compatibility.
+- The JSON must always include all keys above (use null if unknown).
+- zAxisLabel maps to the chart control field used for X-axis label text in the current UI.
+- Use null when unsure.
+- Do not include extra keys.
+`
+    : '';
+
+  const agentModeInstructionHe = agentMode
+    ? `
+דרישת פלט נוספת במצב Agent:
+- אחרי התשובה בתבליטים, כלול בלוק JSON יחיד בתוך \`\`\`json.
+- סכימה:
+  {
+    "recommendation": {
+      "chartType": "individual|pChart|npChart|xBarS|xBarR|ewma|histogram|scatterPlot|null",
+      "yColumns": ["string", "..."],
+      "yColumn": "string|null",
+      "xAxisColumn": "string|null",
+      "sampleSize": number|null,
+      "chartLabel": "string|null",
+      "zAxisLabel": "string|null",
+      "yAxisLabel": "string|null",
+      "reason": "short explanation"
+    }
+  }
+- העדף yColumns עבור עמודה אחת או כמה עמודות Y; yColumn נשאר לתאימות לאחור.
+- ה-JSON חייב לכלול תמיד את כל המפתחות לעיל (אם לא ידוע, השתמש ב-null).
+- zAxisLabel ממופה לשדה התווית של ציר X בממשק הנוכחי.
+- כשלא בטוח השתמש ב-null.
+- אל תוסיף מפתחות נוספים.
+`
+    : '';
+
   if (language === 'he') {
     return `
 אתה יועץ מנוסה בבקרת תהליכים סטטיסטית (SPC).
@@ -122,7 +174,13 @@ export const buildAssistantSystemPrompt = (language: 'en' | 'he' = 'en'): string
 הדגש הנחות נדרשות, גדלי תת-קבוצות, וכל עיבוד מקדים נדרש.
 אם חסר מידע, שאל שאלות הבהרה תמציתיות לפני שמתחייב להמלצת תרשים.
 ספק תשובות שניתן ליישם עבור מתרגלים המטמיעים SPC בסביבות ייצור.
-שמור על תשובות תמציתיות אך יסודיות, השתמש בנקודות תבליט או רשימות ממוספרות לקריאות.
+שמור על תשובות קצרות וישירות.
+פורמט נדרש:
+- עד 5 תבליטים.
+- כל תבליט עד 18 מילים.
+- ללא הקדמות ארוכות, ללא חזרה על השאלה.
+- אם אין מספיק מידע: עד 2 שאלות הבהרה קצרות.
+${agentModeInstructionHe}
 `;
   }
   
@@ -134,7 +192,13 @@ When a user provides context, recommend the top chart type(s) and explain why.
 Highlight required assumptions, subgroup sizes, and any preprocessing needed.
 If information is missing, ask concise clarifying questions before committing to a chart recommendation.
 Provide answers that are actionable for practitioners implementing SPC in production environments.
-Keep responses concise but thorough, using bullet points or numbered lists for readability.
+Keep responses short and direct.
+Required format:
+- Maximum 5 bullets.
+- Maximum 18 words per bullet.
+- No long preamble and no restating the prompt.
+- If information is missing, ask up to 2 short clarifying questions.
+${agentModeInstructionEn}
 `;
 };
 
@@ -190,5 +254,53 @@ The dataset has been updated. Re-evaluate the SPC recommendation using the new s
 ${summary}
 
 Please highlight what changed, whether the recommended chart type should change, and any new considerations the practitioner should be aware of.
+`;
+};
+
+export const buildAgentAutopilotPrompt = (
+  summary: string,
+  selectedChartType: ChartType,
+  selectedChartLabel?: string,
+  language: 'en' | 'he' = 'en',
+): string => {
+  const friendlyName = selectedChartLabel ?? selectedChartType;
+
+  if (language === 'he') {
+    return `
+מצב Agent פעיל. עדכן את פרמטרי ה-SPC ישירות בממשק.
+
+סיכום נתונים:
+${summary}
+
+הגדרה נוכחית: ${friendlyName}.
+
+החזר המלצה מעשית לבחירת:
+- chartType
+- yColumns (עמודה אחת או כמה)
+- xAxisColumn (או null לשימוש באינדקס שורה)
+- sampleSize
+
+החזר גם נימוק קצר.
+`;
+  }
+
+  return `
+Agent Mode is enabled. Update SPC UI parameters directly.
+
+Dataset summary:
+${summary}
+
+Current selection: ${friendlyName}.
+
+Provide actionable recommendation fields for:
+- chartType
+- yColumns (single or multiple)
+- xAxisColumn (or null for row index)
+- sampleSize
+- chartLabel
+- zAxisLabel (used as X-axis label text in current UI)
+- yAxisLabel
+
+Also include a short reason.
 `;
 };

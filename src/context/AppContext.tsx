@@ -71,6 +71,11 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     setErrorMessage(null);
 
     try {
+      const isXbarChart = selectedChartType === 'xBarR' || selectedChartType === 'xBarS';
+      const effectiveSampleSize = isXbarChart && selectedColumns.length > 1
+        ? selectedColumns.length
+        : sampleSize;
+
       // Extract only the selected columns from the raw data
       const filteredData = rawData.data.map(row => {
         const newRow: Record<string, any> = {};
@@ -81,7 +86,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
       });
 
       // Calculate control limits based on the chart type
-      const controlLimits = calculateControlLimits(filteredData, selectedColumns[0], selectedChartType, sampleSize);
+      const controlLimits = calculateControlLimits(filteredData, selectedColumns[0], selectedChartType, effectiveSampleSize);
 
       // Detect rule violations — align series with chart type semantics
       let violations;
@@ -94,9 +99,9 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
           rawData.data.forEach((row) => {
             const vals = valueColumns.map(h => parseFloat(row[h]));
             if (vals.every(v => !isNaN(v))) {
-              const group = vals.slice(0, sampleSize);
-              if (group.length === sampleSize) {
-                const m = group.reduce((a, b) => a + b, 0) / sampleSize;
+              const group = vals.slice(0, effectiveSampleSize);
+              if (group.length === effectiveSampleSize) {
+                const m = group.reduce((a, b) => a + b, 0) / effectiveSampleSize;
                 means.push(m);
               }
             }
@@ -104,10 +109,10 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         } else {
           // Single-column sequential subgrouping
           const values = filteredData.map(row => parseFloat(row[selectedColumns[0]])).filter(v => !isNaN(v));
-          for (let i = 0; i < values.length; i += sampleSize) {
-            const group = values.slice(i, i + sampleSize);
-            if (group.length === sampleSize) {
-              const m = group.reduce((a, b) => a + b, 0) / sampleSize;
+          for (let i = 0; i < values.length; i += effectiveSampleSize) {
+            const group = values.slice(i, i + effectiveSampleSize);
+            if (group.length === effectiveSampleSize) {
+              const m = group.reduce((a, b) => a + b, 0) / effectiveSampleSize;
               means.push(m);
             }
           }
@@ -118,7 +123,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
           ucl: controlLimits.ucl,
           lcl: controlLimits.lcl,
           centerLine: controlLimits.centerLine,
-          sigma: controlLimits.sigma / Math.sqrt(sampleSize)
+          sigma: controlLimits.sigma / Math.sqrt(effectiveSampleSize)
         } as any;
         const series = means.map(v => ({ v }));
         violations = detectRuleViolations(series as any, 'v', xbarControl);

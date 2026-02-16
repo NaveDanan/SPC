@@ -8,6 +8,6 @@ metadata:
 data:
   {{- range $k, $v := .Values.config.data }}
   {{ $k }}: |
-{{ $v | indent 4 }}
+{{ tpl $v $ | indent 4 }}
   {{- end }}
 {{- end }}

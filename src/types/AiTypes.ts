@@ -7,6 +7,13 @@ export interface AiChatAttachment {
   columns?: number;
 }
 
+export interface AiWorksheetOption {
+  index: number;
+  name: string;
+  rows: number;
+  columns: number;
+}
+
 export interface AiChatMessage {
   id: string;
   role: AiMessageRole;
@@ -17,4 +24,5 @@ export interface AiChatMessage {
   responseTimeMs?: number;
   parentUserId?: string;
   attachment?: AiChatAttachment;
+  worksheetOptions?: AiWorksheetOption[];
 }

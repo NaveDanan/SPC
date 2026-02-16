@@ -78,11 +78,24 @@ networkPolicy:
   allowedEgressCIDRs: [] # e.g., ["0.0.0.0/0"] if external APIs needed
   allowDNS: true
 
+ai:
+  apiUrl: ""
+  apiKey: ""
+  model: ""
+
 config:
   enabled: true
   data:
     runtime-config.js: |
-      window.APP_CONFIG = { ENV: "default", FEATURES: {} };
+      window.APP_CONFIG = {
+        ENV: "default",
+        FEATURES: {},
+        AI: {
+          API_URL: {{ .Values.ai.apiUrl | quote }},
+          API_KEY: {{ .Values.ai.apiKey | quote }},
+          MODEL: {{ .Values.ai.model | quote }},
+        },
+      };
 
 secretEnv:
   enabled: false

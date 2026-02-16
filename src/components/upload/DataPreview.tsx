@@ -14,7 +14,7 @@ interface Selection {
 }
 
 const DataPreview: React.FC = () => {
-  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, sampleSize, xAxisColumn, setXAxisColumn } = useAppContext();
+  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, xAxisColumn, setXAxisColumn } = useAppContext();
   const { t } = useLanguage();
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -654,7 +654,7 @@ const DataPreview: React.FC = () => {
           )}
           {(selectedChartType === 'xBarS' || selectedChartType === 'xBarR') && (
             <div className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-              X-bar mode: select {sampleSize} Y columns ({(selectedColumns || []).length}/{sampleSize})
+              X-bar mode: selected Y columns {(selectedColumns || []).length}
             </div>
           )}
         </div>
@@ -757,20 +757,16 @@ const DataPreview: React.FC = () => {
                     <div className="mt-1 flex items-center justify-center gap-1">
                       <button
                         className={`px-1 py-0.5 rounded text-[10px] border ${isY ? 'bg-emerald-200 border-emerald-400 text-emerald-900' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
-                        title={selectedChartType === 'xBarS' || selectedChartType === 'xBarR' ? `Toggle Y column (need ${sampleSize})` : 'Use as Y (values)'}
+                        title={'Use as Y (values)'}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (selectedChartType === 'xBarS' || selectedChartType === 'xBarR') {
+                          const isXbarChart = selectedChartType === 'xBarS' || selectedChartType === 'xBarR';
+                          if (isXbarChart) {
                             const exists = selectedColumns?.includes(header);
                             if (exists) {
                               setSelectedColumns(selectedColumns.filter(h => h !== header));
                             } else {
-                              const currentCount = (selectedColumns || []).length;
-                              if (currentCount >= sampleSize) {
-                                alert(`You can select up to ${sampleSize} columns for the current sample size.`);
-                              } else {
-                                setSelectedColumns([...(selectedColumns || []), header]);
-                              }
+                              setSelectedColumns([...(selectedColumns || []), header]);
                             }
                           } else {
                             setSelectedColumns([header]);

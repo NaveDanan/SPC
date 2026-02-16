@@ -42,22 +42,63 @@ A modern, client‑side Statistical Process Control (SPC) web application for ex
 
 ## AI Chart Assistant Configuration
 
-The "Ask AI" workflow connects to any OpenAI-compatible endpoint to analyse your uploaded CSV/XLS/XLSX data and suggest the most appropriate SPC chart.
+The "Ask AI" workflow connects to your OpenAI-compatible self-hosted endpoint and is configured only via runtime config.
 
-1. Copy `.env.example` to `.env.local` (or `.env`) in the project root.
-2. Set the following variables with your provider details:
+### Runtime config (required)
 
-   ```bash
-   VITE_AI_API_URL="https://api.openai.com"
-   VITE_AI_API_KEY="sk-..."
-   VITE_AI_MODEL="gpt-4o-mini" # Optional; defaults to gpt-4o-mini
-   ```
+For offline/air-gapped deployment, configure AI via `public/config/runtime-config.js` (or Helm ConfigMap mount).
 
-   > `VITE_AI_API_URL` should point to the base URL of a service that exposes the `/v1/chat/completions` endpoint.
+```js
+window.APP_CONFIG = {
+  ENV: "prod",
+  FEATURES: {},
+  AI: {
+    API_URL: "",
+    API_KEY: "",
+    MODEL: "",
+  },
+};
+```
 
-3. Restart `npm run dev` so Vite picks up the new variables.
+The app reads `window.APP_CONFIG.AI.*` first, then falls back to `VITE_AI_API_URL`, `VITE_AI_API_KEY`, and `VITE_AI_MODEL` from `.env`.
 
 Once configured, click the **Ask AI** button in the Data Input panel to open the assistant. It summarises the current dataset (including selected columns, subgroup size, and early statistics), auto-requests an initial recommendation, and stays available for follow-up questions.
+
+### Optional: DSPy Gateway for More Consistent Answers
+
+This repo includes a lightweight DSPy service at `services/dspy-gateway` that enforces short, structured SPC answers.
+
+1. Start the DSPy gateway:
+
+  ```bash
+  cd services/dspy-gateway
+  python -m venv .venv
+  # Windows PowerShell:
+  .venv\Scripts\Activate.ps1
+  # macOS/Linux:
+  # source .venv/bin/activate
+  pip install -r requirements.txt
+  copy .env.example .env  # (use cp on macOS/Linux)
+  python main.py
+  ```
+
+2. Set AI variables in root `.env` and point runtime config to env-backed values (`public/config/runtime-config.js` or Helm values):
+
+  ```js
+  window.APP_CONFIG = {
+    ENV: "local",
+    FEATURES: {},
+    AI: {
+        API_URL: "",
+        API_KEY: "",
+        MODEL: "",
+    },
+  };
+  ```
+
+  Set these in `.env`: `VITE_AI_API_URL`, `VITE_AI_API_KEY`, `VITE_AI_MODEL`, and `DSPY_GATEWAY_PORT`.
+
+The gateway exposes an OpenAI-compatible endpoint (`/v1/chat/completions`) so the existing UI works unchanged, while DSPy controls output style for more predictable, concise responses.
 
 ## Docker
 

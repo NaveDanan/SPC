@@ -84,7 +84,7 @@ Apply it:
 ## 7) Offline/Prod Readiness Notes
 - Security context: runs as non-root with read-only root FS. Nginx writable paths are mounted via emptyDir volumes.
 - NetworkPolicy: egress limited to DNS by default; add CIDRs if you need to reach internal APIs.
-- Runtime config: ConfigMap mounts `/config/runtime-config.js`. `index.html` optionally loads it; safe if missing.
+- Runtime config: ConfigMap mounts `/config/runtime-config.js`. Frontend reads `window.APP_CONFIG.AI` for endpoint/key/model at runtime.
 - Metrics: enable nginxExporter and serviceMonitor if Prometheus Operator is installed. Service exposes a metrics port conditionally.
 - HPA/PDB: HPA uses autoscaling/v2 with CPU utilization; PDB ensures at least one Pod remains during voluntary disruptions.
 
@@ -92,6 +92,7 @@ Apply it:
 - Set `image.repository` and image `tag`/`digest` to your private registry reference.
 - Set ingress `className`, `hosts`, and `tls` secret to match your ingress controller and certs.
 - Ensure the `regcred` secret exists in the same namespace and reference it via `imagePullSecrets` in values.
+- Set `config.data.runtime-config.js` with your internal AI endpoint (`AI.API_URL`) and token/model (`AI.API_KEY`, `AI.MODEL`).
 - If the cluster is truly air-gapped, disable any external egress in `values.networkPolicy.allowedEgressCIDRs`.
 
 ## 9) Troubleshooting

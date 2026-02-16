@@ -7,7 +7,7 @@ import { parseFile } from '../../utils/fileUtils';
 import AiAssistantPanel from '../ai/AiAssistantPanel';
 
 const FileUploadPanel: React.FC = () => {
-  const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns, xAxisColumn, setXAxisColumn, sampleSize, setSampleSize } = useAppContext();
+  const { setRawData, setErrorMessage, resetData, rawData, selectedColumns, setSelectedColumns } = useAppContext();
   const { t } = useLanguage();
   const [isUploading, setIsUploading] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
@@ -101,72 +101,6 @@ const FileUploadPanel: React.FC = () => {
           </div>
         )}
       </div>
-      
-      {/* Data configuration */}
-      {rawData && rawData.headers.length > 0 && (
-        <div className="mt-6 space-y-4">
-
-          <div>
-            <label htmlFor="x-axis-column" className="block text-sm font-medium text-gray-700 mb-1">
-              {t('fileUpload.selectXAxis')}
-            </label>
-            <select
-              id="x-axis-column"
-              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              value={xAxisColumn || ''}
-              onChange={(e) => {
-                const x = e.target.value;
-                setXAxisColumn(x || null);
-              }}
-            >
-              <option value="">{t('fileUpload.useRowIndex')}</option>
-              {rawData.headers.map((header) => (
-                <option key={header} value={header}>
-                  {header}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">{t('fileUpload.xAxisHint')}</p>
-          </div>
-          <div>
-            <label htmlFor="data-column" className="block text-sm font-medium text-gray-700 mb-1">
-              {t('fileUpload.selectYValue')}
-            </label>
-            <select
-              id="data-column"
-              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              value={selectedColumns[0] || ''}
-              onChange={(e) => {
-                setSelectedColumns([e.target.value, ...selectedColumns.slice(1).filter(() => false)]);
-              }}
-            >
-              {rawData.headers.map((header) => (
-                <option key={header} value={header}>
-                  {header}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label htmlFor="sample-size" className="block text-sm font-medium text-gray-700 mb-1">
-              {t('fileUpload.sampleSize')}
-            </label>
-            <input
-              id="sample-size"
-              type="number"
-              min={2}
-              max={25}
-              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              value={sampleSize}
-              onChange={(e) => setSampleSize(Math.max(2, Math.min(25, parseInt(e.target.value) || 5)))}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              {t('fileUpload.sampleSizeHint')}
-            </p>
-          </div>
-        </div>
-      )}
       
       {/* Example data link */}
       <div className="mt-2 text-sm text-gray-500">

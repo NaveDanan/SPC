@@ -175,12 +175,49 @@ The application will automatically reload when you make changes to the source fi
 
 ### AI Assistant: Streaming + Markdown/LaTeX
 
-- Configure environment variables in `.env` (or `.env.local`):
-  - `VITE_AI_API_URL` (e.g., `https://api.openai.com`)
-  - `VITE_AI_API_KEY` (e.g., `sk-...`)
-  - Optional: `VITE_AI_MODEL` (default `gpt-4o-mini`)
+- Configure runtime AI settings in `public/config/runtime-config.js` (or Helm `config.data.runtime-config.js`):
+
+```js
+window.APP_CONFIG = {
+  ENV: "offline",
+  FEATURES: {},
+  AI: {
+    API_URL: "",
+    API_KEY: "",
+    MODEL: "",
+  },
+};
+```
 - The chat now streams responses when the provider supports `POST /v1/chat/completions` with `stream: true` (OpenAI-compatible).
 - Assistant messages support basic Markdown (headings, lists, links, code blocks) and TeX math using `$...$` / `$$...$$`.
+- For more predictable and consistent responses, run the optional DSPy gateway (`services/dspy-gateway`) and set `VITE_AI_API_URL` in root `.env`.
+
+#### Optional DSPy Gateway (Consistency Mode)
+
+```powershell
+cd services/dspy-gateway
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+# Edit root .env and set VITE_AI_API_URL / VITE_AI_API_KEY / VITE_AI_MODEL / DSPY_API_KEY / DSPY_API_BASE / DSPY_GATEWAY_PORT
+python main.py
+```
+
+Then set front-end runtime config:
+
+```js
+window.APP_CONFIG = {
+  ENV: "local",
+  FEATURES: {},
+  AI: {
+    API_URL: "",
+    API_KEY: "",
+    MODEL: "",
+  },
+};
+```
+
+Restart `pnpm dev` after changing runtime config.
 - For high-quality math rendering, include KaTeX or MathJax via CDN in `index.html` (optional):
 
   KaTeX (recommended):

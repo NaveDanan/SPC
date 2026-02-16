@@ -1,0 +1,19 @@
+pnpm build
+
+> spc-analysis-tool@0.1.0 build D:\Projects\SPC
+> vite build
+
+vite v5.4.19 building for production...
+<script src="/config/runtime-config.js"> in "/index.html" can't be bundled without type="module" attribute
+transforming (2) vite\modulepreload-polyfill.jsBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ 1527 modules transformed.
+dist/index.html                         1.19 kB │ gzip:   0.55 kB
+dist/assets/index-CzItulPc.css         28.75 kB │ gzip:   6.09 kB
+dist/assets/ui-vendor-CrKWp5bX.js      69.81 kB │ gzip:  19.28 kB
+dist/assets/index-nCUnffFv.js         136.69 kB │ gzip:  37.53 kB
+dist/assets/react-vendor-DJ1oPbzn.js  141.00 kB │ gzip:  45.31 kB
+dist/assets/chart-vendor-xkGBlVW-.js  249.27 kB │ gzip:  85.39 kB
+dist/assets/data-vendor-fjkRbcNv.js   403.92 kB │ gzip: 138.86 kB
+✓ built in 3.21s

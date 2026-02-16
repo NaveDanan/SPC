@@ -53,6 +53,11 @@ networkPolicy:
   allowedEgressCIDRs: []
   allowDNS: true
 
+ai:
+  apiUrl: ""
+  apiKey: ""
+  model: ""
+
 config:
   enabled: true
   data:
@@ -60,6 +65,11 @@ config:
       window.APP_CONFIG = {
         ENV: "prod",
         FEATURES: {},
+        AI: {
+          API_URL: {{ .Values.ai.apiUrl | quote }},
+          API_KEY: {{ .Values.ai.apiKey | quote }},
+          MODEL: {{ .Values.ai.model | quote }},
+        },
       };
 
 secretEnv:

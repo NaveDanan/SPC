@@ -3,6 +3,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { ChartType } from '../../types/DataTypes';
 import ChartTypeInfo from './ChartTypeInfo';
+import MultipleSelector, { Option } from '../ui/multiselect';
 
 const ControlPanel: React.FC = () => {
   const {
@@ -11,6 +12,11 @@ const ControlPanel: React.FC = () => {
     chartOptions,
     setChartOptions,
     isDataLoaded,
+    rawData,
+    selectedColumns,
+    setSelectedColumns,
+    xAxisColumn,
+    setXAxisColumn,
   } = useAppContext();
   const { t } = useLanguage();
   
@@ -49,6 +55,55 @@ const ControlPanel: React.FC = () => {
           ))}
         </select>
       </div>
+
+      {/* Data configuration */}
+      {rawData && rawData.headers.length > 0 && (
+        <div className="space-y-4 mb-4">
+          <div>
+            <label htmlFor="x-axis-column" className="block text-sm font-medium text-gray-700 mb-1">
+              {t('fileUpload.selectXAxis')}
+            </label>
+            <select
+              id="x-axis-column"
+              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={xAxisColumn || ''}
+              onChange={(e) => {
+                const x = e.target.value;
+                setXAxisColumn(x || null);
+              }}
+              disabled={!isDataLoaded}
+            >
+              <option value="">{t('fileUpload.useRowIndex')}</option>
+              {rawData.headers.map((header) => (
+                <option key={header} value={header}>
+                  {header}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">{t('fileUpload.xAxisHint')}</p>
+          </div>
+
+          <div>
+            <label htmlFor="data-column" className="block text-sm font-medium text-gray-700 mb-1">
+              {t('fileUpload.selectYValue')}
+            </label>
+            <MultipleSelector
+              value={selectedColumns.map((column) => ({ value: column, label: column }))}
+              options={rawData.headers.map((header): Option => ({ value: header, label: header }))}
+              placeholder={t('fileUpload.selectYValue')}
+              disabled={!isDataLoaded}
+              className="bg-white"
+              hidePlaceholderWhenSelected
+              emptyIndicator={<p className="text-center text-sm">No results found</p>}
+              onChange={(options) => setSelectedColumns(options.map((option) => option.value))}
+              commandProps={{ label: t('fileUpload.selectYValue') }}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Selected columns: {selectedColumns.length}
+            </p>
+          </div>
+        </div>
+      )}
       
       {/* Chart Customization */}
       <div className="space-y-4">
