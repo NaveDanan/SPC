@@ -34,7 +34,7 @@ const translations: Record<Language, Record<string, string>> = {
     'upload.dragDrop': 'Drag and drop your data file here',
     'upload.or': 'or',
     'upload.browse': 'Browse Files',
-    'upload.supported': 'Supported formats: CSV, Excel (XLSX, XLS)',
+    'upload.supported': 'Supported formats: CSV, Excel (XLSX, XLS, XLSM)',
     
     // Charts
     'chart.individual': 'Individual',
@@ -98,7 +98,7 @@ const translations: Record<Language, Record<string, string>> = {
     'fileUpload.title': 'Data Input',
     'fileUpload.askAI': 'Ask AI',
     'fileUpload.dragDrop': 'Drag & drop a file here, or click to select',
-    'fileUpload.supports': 'Supports CSV, XLS, XLSX',
+    'fileUpload.supports': 'Supports CSV, XLS, XLSX, XLSM',
     'fileUpload.uploading': 'Uploading and parsing file...',
     'fileUpload.rows': 'rows',
     'fileUpload.columns': 'columns',
@@ -186,7 +186,7 @@ const translations: Record<Language, Record<string, string>> = {
     'upload.dragDrop': 'גרור ושחרר את קובץ הנתונים כאן',
     'upload.or': 'או',
     'upload.browse': 'עיון בקבצים',
-    'upload.supported': 'פורמטים נתמכים: CSV, Excel (XLSX, XLS)',
+    'upload.supported': 'פורמטים נתמכים: CSV, Excel (XLSX, XLS, XLSM)',
     
     // Charts
     'chart.individual': 'אינדיבידואלי',
@@ -250,7 +250,7 @@ const translations: Record<Language, Record<string, string>> = {
     'fileUpload.title': 'קלט נתונים',
     'fileUpload.askAI': 'שאל AI',
     'fileUpload.dragDrop': 'גרור ושחרר קובץ כאן, או לחץ לבחירה',
-    'fileUpload.supports': 'תומך ב-CSV, XLS, XLSX',
+    'fileUpload.supports': 'תומך ב-CSV, XLS, XLSX, XLSM',
     'fileUpload.uploading': 'מעלה ומנתח קובץ...',
     'fileUpload.rows': 'שורות',
     'fileUpload.columns': 'עמודות',

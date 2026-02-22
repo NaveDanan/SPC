@@ -32,7 +32,7 @@ const Dashboard: React.FC = () => {
             />
             </div>
             
-            <p className="text-gray-600 mb-2">Upload your process data (CSV / XLSX) to generate control charts and detect rule violations.</p>
+            <p className="text-gray-600 mb-2">Upload your process data (CSV / XLSX / XLSM) to generate control charts and detect rule violations.</p>
             
           </div>
         </div>

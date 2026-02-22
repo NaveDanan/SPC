@@ -2,6 +2,41 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { DataSet, Sheet } from '../types/DataTypes';
 
+const MAX_EXCEL_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_PARSED_ROWS_PER_SHEET = 100_000;
+
+type ParseProgress = {
+  message: string;
+};
+
+type ParseFileOptions = {
+  onProgress?: (progress: ParseProgress) => void;
+};
+
+type ExcelWorkerProgressPayload = {
+  type: 'progress';
+  message: string;
+};
+
+type ExcelWorkerSuccessPayload = {
+  type: 'done';
+  ok: true;
+  payload: {
+    sheets: Sheet[];
+    fileType: string;
+    parseWarning?: string;
+  };
+};
+
+type ExcelWorkerErrorPayload = {
+  type: 'error';
+  ok: false;
+  error: string;
+};
+
+type ExcelWorkerResponse = ExcelWorkerSuccessPayload | ExcelWorkerErrorPayload | ExcelWorkerProgressPayload;
+type ExcelWorkerFinalResponse = ExcelWorkerSuccessPayload | ExcelWorkerErrorPayload;
+
 // Parse CSV file
 export const parseCSV = (file: File): Promise<DataSet> => {
   return new Promise((resolve, reject) => {
@@ -26,47 +61,61 @@ export const parseCSV = (file: File): Promise<DataSet> => {
 };
 
 // Parse Excel file (XLS, XLSX)
-export const parseExcel = (file: File): Promise<DataSet> => {
+export const parseExcel = (file: File, options?: ParseFileOptions): Promise<DataSet> => {
   return new Promise((resolve, reject) => {
+    if (file.size > MAX_EXCEL_FILE_SIZE_BYTES) {
+      reject(new Error('Excel file is too large. Maximum supported size is 70MB.'));
+      return;
+    }
+
     const reader = new FileReader();
     
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        options?.onProgress?.({ message: 'Opening workbook...' });
         const data = e.target?.result;
         if (!data) {
           reject(new Error('Failed to read file'));
           return;
         }
-        
-        // Parse workbook from the file data
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Build sheets array
-        const sheets: Sheet[] = workbook.SheetNames.map(sheetName => {
-          const ws = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 });
-          if (!jsonData.length) {
-            return { name: sheetName, headers: [], data: [] };
-          }
-            const headers = (jsonData[0] as string[]).map(h => (h === undefined || h === null ? '' : String(h)));
-          const rows = jsonData.slice(1) as any[][];
-          const rowData = rows.map((row) => {
-            const dataRow: Record<string, any> = {};
-            headers.forEach((header, index) => {
-              dataRow[header] = row[index];
-            });
-            return dataRow;
-          });
-          return { name: sheetName, headers, data: rowData };
+
+        const buffer = data as ArrayBuffer;
+        const worker = new Worker(new URL('../workers/excelParser.worker.ts', import.meta.url), { type: 'module' });
+
+        const workerResult = await new Promise<ExcelWorkerFinalResponse>((workerResolve, workerReject) => {
+          worker.onmessage = (event: MessageEvent<ExcelWorkerResponse>) => {
+            if (event.data.type === 'progress') {
+              options?.onProgress?.({ message: event.data.message });
+              return;
+            }
+            workerResolve(event.data);
+          };
+          worker.onerror = () => {
+            workerReject(new Error('Excel parser worker failed.'));
+          };
+          worker.postMessage({
+            fileName: file.name,
+            data: buffer,
+            maxRowsPerSheet: MAX_PARSED_ROWS_PER_SHEET,
+          }, [buffer]);
+        }).finally(() => {
+          worker.terminate();
         });
 
+        if (!workerResult.ok) {
+          reject(new Error(workerResult.error));
+          return;
+        }
+
+        const sheets = workerResult.payload.sheets;
         const first = sheets[0] || { name: 'Sheet1', headers: [], data: [] };
 
         resolve({
           data: first.data,
           headers: first.headers,
           fileName: file.name,
-          fileType: file.name.endsWith('.xlsx') ? 'xlsx' : 'xls',
+          fileType: workerResult.payload.fileType,
+          parseWarning: workerResult.payload.parseWarning,
           sheets,
           activeSheetIndex: 0,
         });
@@ -85,15 +134,15 @@ export const parseExcel = (file: File): Promise<DataSet> => {
 };
 
 // Parse file based on its type
-export const parseFile = async (file: File): Promise<DataSet> => {
+export const parseFile = async (file: File, options?: ParseFileOptions): Promise<DataSet> => {
   const fileName = file.name.toLowerCase();
   
   if (fileName.endsWith('.csv')) {
     return parseCSV(file);
-  } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-    return parseExcel(file);
+  } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.xlsm')) {
+    return parseExcel(file, options);
   } else {
-    throw new Error('Unsupported file format. Please upload a CSV, XLS, or XLSX file.');
+    throw new Error('Unsupported file format. Please upload a CSV, XLS, XLSX, or XLSM file.');
   }
 };
 

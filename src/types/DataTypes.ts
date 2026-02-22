@@ -17,6 +17,7 @@ export interface DataSet {
   headers: string[];       // Active sheet headers
   fileName: string;
   fileType: string;
+  parseWarning?: string;
   sheets?: Sheet[];        // All sheets if multi-sheet workbook
   activeSheetIndex?: number; // Index of active sheet in sheets
 }
