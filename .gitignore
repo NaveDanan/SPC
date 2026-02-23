@@ -23,3 +23,26 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc.*
+*.py,cover
+.python-version
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+site/
+*.egg-info/
+.ipynb_checkpoints/

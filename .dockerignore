@@ -8,3 +8,21 @@ tmp
 coverage
 *.local
 *.env
+
+# Python
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.venv
+venv
+env
+ENV
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+*.egg-info
+services/**/__pycache__
