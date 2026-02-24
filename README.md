@@ -60,7 +60,7 @@ window.APP_CONFIG = {
 };
 ```
 
-The app reads `window.APP_CONFIG.AI.*` first, then falls back to `VITE_AI_API_URL`, `VITE_AI_API_KEY`, and `VITE_AI_MODEL` from `.env`.
+The app reads `window.APP_CONFIG.AI.*` first, then falls back to `AI_API_URL`, `AI_API_KEY`, and `AI_MODEL` from `.env` (`VITE_AI_*` is still supported as legacy fallback).
 
 Once configured, click the **Ask AI** button in the Data Input panel to open the assistant. It summarises the current dataset (including selected columns, subgroup size, and early statistics), auto-requests an initial recommendation, and stays available for follow-up questions.
 
@@ -96,7 +96,8 @@ This repo includes a lightweight DSPy service at `services/dspy-gateway` that en
   };
   ```
 
-  Set these in `.env`: `VITE_AI_API_URL`, `VITE_AI_API_KEY`, `VITE_AI_MODEL`, and `DSPY_GATEWAY_PORT`.
+  Set these in `.env`: `AI_API_URL`, `AI_API_KEY`, and `AI_MODEL`.
+  Optional: `AI_API_BASE` (custom upstream base URL) and `AI_GATEWAY_PORT` (default `8001`).
 
 The gateway exposes an OpenAI-compatible endpoint (`/v1/chat/completions`) so the existing UI works unchanged, while DSPy controls output style for more predictable, concise responses.
 

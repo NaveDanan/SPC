@@ -23,6 +23,12 @@ ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 MANAGED_ENV_KEYS = (
+    "AI_API_URL",
+    "AI_API_KEY",
+    "AI_MODEL",
+    "AI_API_BASE",
+    "AI_GATEWAY_API_KEY",
+    "AI_GATEWAY_PORT",
     "VITE_AI_MODEL",
     "VITE_AI_API_KEY",
     "DSPY_API_KEY",
@@ -34,6 +40,8 @@ MANAGED_ENV_KEYS = (
     "DSPY_GATEWAY_API_KEY",
     "DSPY_GATEWAY_PORT",
 )
+
+DEFAULT_GATEWAY_PORT = 8001
 
 
 def sync_managed_env_from_root() -> None:
@@ -47,6 +55,17 @@ def sync_managed_env_from_root() -> None:
 
 
 sync_managed_env_from_root()
+
+
+def env_first(*keys: str) -> str | None:
+    for key in keys:
+        value = os.getenv(key)
+        if value is None:
+            continue
+        trimmed = value.strip()
+        if trimmed:
+            return trimmed
+    return None
 
 
 class ChatMessage(BaseModel):
@@ -143,9 +162,9 @@ class DSPyGateway:
     def _configure(self) -> None:
         self._reload_env_if_changed()
 
-        api_key = os.getenv("DSPY_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("VITE_AI_API_KEY")
-        model_name = os.getenv("VITE_AI_MODEL")
-        api_base = os.getenv("DSPY_API_BASE")
+        api_key = env_first("AI_API_KEY", "DSPY_API_KEY", "OPENAI_API_KEY", "VITE_AI_API_KEY")
+        model_name = env_first("AI_MODEL", "VITE_AI_MODEL")
+        api_base = env_first("AI_API_BASE", "DSPY_API_BASE")
         temperature = float(os.getenv("DSPY_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("DSPY_MAX_TOKENS", "220"))
         timeout_seconds = float(os.getenv("DSPY_TIMEOUT_SECONDS", "20"))
@@ -165,13 +184,13 @@ class DSPyGateway:
 
         if not model_name:
             raise RuntimeError(
-                "Missing VITE_AI_MODEL. "
+                "Missing AI_MODEL. "
                 "Set it in project root .env before calling /v1/chat/completions."
             )
 
         if not api_key:
             raise RuntimeError(
-                "Missing DSPY_API_KEY (or OPENAI_API_KEY or VITE_AI_API_KEY). "
+                "Missing AI_API_KEY. "
                 "Set it in project root .env before calling /v1/chat/completions."
             )
 
@@ -342,22 +361,22 @@ def health() -> dict[str, str]:
 def health_ready() -> dict[str, object]:
     gateway._reload_env_if_changed()
 
-    model_name = os.getenv("VITE_AI_MODEL", "")
-    api_base = os.getenv("DSPY_API_BASE", "")
-    has_api_key = bool((os.getenv("DSPY_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("VITE_AI_API_KEY") or "").strip())
+    model_name = env_first("AI_MODEL", "VITE_AI_MODEL") or ""
+    api_base = env_first("AI_API_BASE", "DSPY_API_BASE") or ""
+    has_api_key = bool(env_first("AI_API_KEY", "DSPY_API_KEY", "OPENAI_API_KEY", "VITE_AI_API_KEY"))
 
     if not model_name.strip():
-        return {"ready": False, "reason": "Missing VITE_AI_MODEL", "model_source": "VITE_AI_MODEL"}
+        return {"ready": False, "reason": "Missing AI_MODEL", "model_source": "AI_MODEL"}
     if not has_api_key:
-        return {"ready": False, "reason": "Missing DSPY_API_KEY/OPENAI_API_KEY/VITE_AI_API_KEY", "model_source": "VITE_AI_MODEL"}
+        return {"ready": False, "reason": "Missing AI_API_KEY", "model_source": "AI_MODEL"}
     if not api_base.strip():
-        return {"ready": True, "model": model_name, "api_base": "(provider default)", "model_source": "VITE_AI_MODEL"}
+        return {"ready": True, "model": model_name, "api_base": "(provider default)", "model_source": "AI_MODEL"}
 
     parsed = urlparse(api_base)
     host = parsed.hostname
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if not host:
-        return {"ready": False, "reason": "Invalid DSPY_API_BASE", "api_base": api_base}
+        return {"ready": False, "reason": "Invalid AI_API_BASE", "api_base": api_base}
 
     try:
         with socket.create_connection((host, port), timeout=2):
@@ -368,7 +387,7 @@ def health_ready() -> dict[str, object]:
             "reason": "Upstream host unreachable",
             "model": model_name,
             "api_base": f"{parsed.scheme}://{parsed.netloc}",
-            "model_source": "VITE_AI_MODEL",
+            "model_source": "AI_MODEL",
             "error": str(exc),
         }
 
@@ -376,7 +395,7 @@ def health_ready() -> dict[str, object]:
         "ready": True,
         "model": model_name,
         "api_base": f"{parsed.scheme}://{parsed.netloc}",
-        "model_source": "VITE_AI_MODEL",
+        "model_source": "AI_MODEL",
     }
 
 
@@ -385,7 +404,7 @@ def chat_completions(
     payload: ChatCompletionRequest,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
-    required_gateway_key = os.getenv("DSPY_GATEWAY_API_KEY", "").strip()
+    required_gateway_key = env_first("AI_GATEWAY_API_KEY", "DSPY_GATEWAY_API_KEY") or ""
     if required_gateway_key:
         token = ""
         if authorization and authorization.lower().startswith("bearer "):
@@ -397,7 +416,7 @@ def chat_completions(
         content = gateway.answer(payload.messages)
     except Exception as exc:  # pragma: no cover
         detail = str(exc) or "DSPy inference failed"
-        if "Missing DSPY_API_KEY" in detail or "OPENAI_API_KEY" in detail or "Missing VITE_AI_MODEL" in detail:
+        if "Missing AI_API_KEY" in detail or "Missing AI_MODEL" in detail:
             raise HTTPException(status_code=503, detail=detail) from exc
         connectivity_markers = (
             "Connection error",
@@ -409,21 +428,21 @@ def chat_completions(
             "Connection refused",
         )
         if any(marker in detail for marker in connectivity_markers):
-            safe_base = gateway._safe_api_base(os.getenv("DSPY_API_BASE") or gateway._api_base)
-            model_name = os.getenv("VITE_AI_MODEL") or gateway._model_name or "unknown"
+            safe_base = gateway._safe_api_base(env_first("AI_API_BASE", "DSPY_API_BASE") or gateway._api_base)
+            model_name = env_first("AI_MODEL", "VITE_AI_MODEL") or gateway._model_name or "unknown"
             raise HTTPException(
                 status_code=503,
                 detail=(
                     "DSPy upstream connection failed. "
                     f"model={model_name}, api_base={safe_base}. "
-                    "Verify DSPY_API_BASE points to your reachable self-hosted endpoint. "
+                    "Verify AI_API_BASE points to your reachable self-hosted endpoint. "
                     f"Original error: {detail}"
                 ),
             ) from exc
         raise HTTPException(status_code=500, detail=f"DSPy inference failed: {detail}") from exc
 
     created = int(time.time())
-    response_model = os.getenv("VITE_AI_MODEL", "unknown")
+    response_model = env_first("AI_MODEL", "VITE_AI_MODEL") or "unknown"
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
@@ -451,14 +470,12 @@ def chat_completions(
 if __name__ == "__main__":
     import uvicorn
 
-    gateway_port_value = (os.getenv("DSPY_GATEWAY_PORT") or "").strip()
-    if not gateway_port_value:
-        raise RuntimeError("Missing DSPY_GATEWAY_PORT. Set it in project root .env before starting the gateway.")
+    gateway_port_value = env_first("AI_GATEWAY_PORT", "DSPY_GATEWAY_PORT") or str(DEFAULT_GATEWAY_PORT)
 
     try:
         gateway_port = int(gateway_port_value)
     except ValueError as exc:
-        raise RuntimeError("Invalid DSPY_GATEWAY_PORT. It must be an integer.") from exc
+        raise RuntimeError("Invalid AI_GATEWAY_PORT. It must be an integer.") from exc
 
     reload_value = (os.getenv("DSPY_GATEWAY_RELOAD") or "true").strip().lower()
     reload_enabled = reload_value in {"1", "true", "yes", "on"}

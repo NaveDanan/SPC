@@ -190,7 +190,7 @@ window.APP_CONFIG = {
 ```
 - The chat now streams responses when the provider supports `POST /v1/chat/completions` with `stream: true` (OpenAI-compatible).
 - Assistant messages support basic Markdown (headings, lists, links, code blocks) and TeX math using `$...$` / `$$...$$`.
-- For more predictable and consistent responses, run the optional DSPy gateway (`services/dspy-gateway`) and set `VITE_AI_API_URL` in root `.env`.
+- For more predictable and consistent responses, run the optional DSPy gateway (`services/dspy-gateway`) and set `AI_API_URL` in root `.env`.
 
 #### Optional DSPy Gateway (Consistency Mode)
 
@@ -199,7 +199,8 @@ cd services/dspy-gateway
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# Edit root .env and set VITE_AI_API_URL / VITE_AI_API_KEY / VITE_AI_MODEL / DSPY_API_KEY / DSPY_API_BASE / DSPY_GATEWAY_PORT
+# Edit root .env and set AI_API_URL / AI_API_KEY / AI_MODEL
+# Optional: AI_API_BASE (custom upstream URL), AI_GATEWAY_PORT (default: 8001)
 python main.py
 ```
 

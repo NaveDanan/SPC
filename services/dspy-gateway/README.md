@@ -24,11 +24,12 @@ python -m venv .venv
 # source .venv/bin/activate
 
 pip install -r requirements.txt
-# Edit project root .env and set VITE_AI_API_URL / VITE_AI_API_KEY / VITE_AI_MODEL / DSPY_API_* / DSPY_GATEWAY_PORT
+# Edit project root .env and set AI_API_URL / AI_API_KEY / AI_MODEL
+# Optional: AI_API_BASE (custom upstream URL), AI_GATEWAY_PORT (default: 8001)
 python main.py
 ```
 
-The service runs on `http://localhost:${DSPY_GATEWAY_PORT}`.
+The service runs on `http://localhost:8001` by default.
 
 ## Front-end wiring
 
@@ -48,9 +49,6 @@ window.APP_CONFIG = {
 
 ## Notes
 
-- If `DSPY_GATEWAY_API_KEY` is empty, auth is not enforced on the gateway.
-- If `DSPY_GATEWAY_API_KEY` is set, `window.APP_CONFIG.AI.API_KEY` must match it.
 - The gateway enforces `LITELLM_LOCAL_MODEL_COST_MAP=true` at startup, so LiteLLM uses bundled local metadata without remote fetch.
-- `GET /health/ready` validates model/key config and basic upstream host reachability for `DSPY_API_BASE`.
-- Optional: tune upstream timeout with `DSPY_TIMEOUT_SECONDS` (default `20`).
+- `GET /health/ready` validates model/key config and basic upstream host reachability for `AI_API_BASE`.
 - Changes to root `.env` are reloaded automatically on the next request (no gateway restart required).
