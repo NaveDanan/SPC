@@ -98,6 +98,7 @@ This repo includes a lightweight DSPy service at `services/dspy-gateway` that en
 
   Set these in `.env`: `AI_API_URL`, `AI_API_KEY`, and `AI_MODEL`.
   Optional: `AI_API_BASE` (custom upstream base URL) and `AI_GATEWAY_PORT` (default `8001`).
+  If `AI_MODEL` is not provider-prefixed (for example `openai/<MODEL_ID>`), set `AI_PROVIDER`.
 
 The gateway exposes an OpenAI-compatible endpoint (`/v1/chat/completions`) so the existing UI works unchanged, while DSPy controls output style for more predictable, concise responses.
 

@@ -201,6 +201,7 @@ python -m venv .venv
 pip install -r requirements.txt
 # Edit root .env and set AI_API_URL / AI_API_KEY / AI_MODEL
 # Optional: AI_API_BASE (custom upstream URL), AI_GATEWAY_PORT (default: 8001)
+# If AI_MODEL is not provider-prefixed (e.g. openai/<MODEL_ID>), set AI_PROVIDER.
 python main.py
 ```
 

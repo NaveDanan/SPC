@@ -26,6 +26,7 @@ python -m venv .venv
 pip install -r requirements.txt
 # Edit project root .env and set AI_API_URL / AI_API_KEY / AI_MODEL
 # Optional: AI_API_BASE (custom upstream URL), AI_GATEWAY_PORT (default: 8001)
+# If AI_MODEL is not provider-prefixed (for example openai/<MODEL_ID>), set AI_PROVIDER.
 python main.py
 ```
 
@@ -52,3 +53,7 @@ window.APP_CONFIG = {
 - The gateway enforces `LITELLM_LOCAL_MODEL_COST_MAP=true` at startup, so LiteLLM uses bundled local metadata without remote fetch.
 - `GET /health/ready` validates model/key config and basic upstream host reachability for `AI_API_BASE`.
 - Changes to root `.env` are reloaded automatically on the next request (no gateway restart required).
+- For OpenAI-compatible self-hosted endpoints (for example vLLM), set `AI_API_BASE` to your server base (typically ending with `/v1`).
+- If `AI_MODEL` is not provider-prefixed, set `AI_PROVIDER` (for example `openai`) so LiteLLM can resolve the backend correctly.
+- `AI_PROVIDER` is used only for LiteLLM routing. The model sent upstream remains the raw `AI_MODEL` unless you explicitly prefix `AI_MODEL`.
+- A `GET /` returning `404` from the upstream model server is usually harmless (many OpenAI-compatible servers only expose `/v1/*`).

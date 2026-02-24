@@ -26,6 +26,7 @@ MANAGED_ENV_KEYS = (
     "AI_API_URL",
     "AI_API_KEY",
     "AI_MODEL",
+    "AI_PROVIDER",
     "AI_API_BASE",
     "AI_GATEWAY_API_KEY",
     "AI_GATEWAY_PORT",
@@ -42,6 +43,23 @@ MANAGED_ENV_KEYS = (
 )
 
 DEFAULT_GATEWAY_PORT = 8001
+KNOWN_PROVIDER_PREFIXES = (
+    "openai/",
+    "azure/",
+    "anthropic/",
+    "bedrock/",
+    "cohere/",
+    "gemini/",
+    "vertex_ai/",
+    "groq/",
+    "mistral/",
+    "ollama/",
+    "together_ai/",
+    "huggingface/",
+    "replicate/",
+    "deepseek/",
+    "xai/",
+)
 
 
 def sync_managed_env_from_root() -> None:
@@ -131,7 +149,7 @@ class DSPyGateway:
         self._model_name: str | None = None
         self._api_base: str | None = None
         self._env_mtime: float | None = None
-        self._active_config: tuple[str, str | None, str] | None = None
+        self._active_config: tuple[str, str | None, str, str | None] | None = None
 
     @staticmethod
     def _safe_api_base(api_base: str | None) -> str:
@@ -141,6 +159,32 @@ class DSPyGateway:
         if not parsed.scheme or not parsed.netloc:
             return api_base
         return f"{parsed.scheme}://{parsed.netloc}"
+
+    @staticmethod
+    def _resolve_litellm_target(model_name: str, api_base: str | None) -> tuple[str, str | None]:
+        normalized = model_name.strip()
+        if not normalized:
+            return normalized, None
+
+        lowered = normalized.lower()
+        if lowered.startswith(KNOWN_PROVIDER_PREFIXES):
+            return normalized, None
+
+        provider = env_first("AI_PROVIDER")
+        if provider:
+            return normalized, provider.strip().lower()
+
+        # For custom OpenAI-compatible endpoints (vLLM, llama.cpp server, etc.),
+        # require explicit provider when model id does not include it.
+        if api_base:
+            raise RuntimeError(
+                "Missing AI_PROVIDER for AI_API_BASE with unprefixed AI_MODEL. "
+                "If the served model ID does NOT contain the provider name "
+                "(e.g: \"openai/<MODEL_ID>\") add the provider name in "
+                "\"AI_PROVIDER\"; otherwise leave AI_PROVIDER empty."
+            )
+
+        return normalized, None
 
     def _reload_env_if_changed(self) -> None:
         try:
@@ -165,6 +209,7 @@ class DSPyGateway:
         api_key = env_first("AI_API_KEY", "DSPY_API_KEY", "OPENAI_API_KEY", "VITE_AI_API_KEY")
         model_name = env_first("AI_MODEL", "VITE_AI_MODEL")
         api_base = env_first("AI_API_BASE", "DSPY_API_BASE")
+        litellm_model_name, custom_llm_provider = self._resolve_litellm_target(model_name or "", api_base)
         temperature = float(os.getenv("DSPY_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("DSPY_MAX_TOKENS", "220"))
         timeout_seconds = float(os.getenv("DSPY_TIMEOUT_SECONDS", "20"))
@@ -181,6 +226,8 @@ class DSPyGateway:
             lm_kwargs["api_key"] = api_key
         if api_base:
             lm_kwargs["api_base"] = api_base
+        if custom_llm_provider:
+            lm_kwargs["custom_llm_provider"] = custom_llm_provider
 
         if not model_name:
             raise RuntimeError(
@@ -194,11 +241,11 @@ class DSPyGateway:
                 "Set it in project root .env before calling /v1/chat/completions."
             )
 
-        current_config = (model_name, api_base, api_key)
+        current_config = (model_name, api_base, api_key, custom_llm_provider)
         if self._predictor is not None and self._active_config == current_config:
             return
 
-        lm = dspy.LM(model_name, **lm_kwargs)
+        lm = dspy.LM(litellm_model_name, **lm_kwargs)
         dspy.configure(lm=lm)
         self._predictor = dspy.Predict(SPCConciseAdvice)
         self._model_name = model_name
@@ -363,12 +410,15 @@ def health_ready() -> dict[str, object]:
 
     model_name = env_first("AI_MODEL", "VITE_AI_MODEL") or ""
     api_base = env_first("AI_API_BASE", "DSPY_API_BASE") or ""
+    provider = env_first("AI_PROVIDER") or ""
     has_api_key = bool(env_first("AI_API_KEY", "DSPY_API_KEY", "OPENAI_API_KEY", "VITE_AI_API_KEY"))
 
     if not model_name.strip():
         return {"ready": False, "reason": "Missing AI_MODEL", "model_source": "AI_MODEL"}
     if not has_api_key:
         return {"ready": False, "reason": "Missing AI_API_KEY", "model_source": "AI_MODEL"}
+    if api_base.strip() and not model_name.strip().lower().startswith(KNOWN_PROVIDER_PREFIXES) and not provider.strip():
+        return {"ready": False, "reason": "Missing AI_PROVIDER for AI_API_BASE with unprefixed AI_MODEL", "model_source": "AI_MODEL"}
     if not api_base.strip():
         return {"ready": True, "model": model_name, "api_base": "(provider default)", "model_source": "AI_MODEL"}
 
@@ -416,7 +466,7 @@ def chat_completions(
         content = gateway.answer(payload.messages)
     except Exception as exc:  # pragma: no cover
         detail = str(exc) or "DSPy inference failed"
-        if "Missing AI_API_KEY" in detail or "Missing AI_MODEL" in detail:
+        if "Missing AI_API_KEY" in detail or "Missing AI_MODEL" in detail or "Missing AI_PROVIDER" in detail:
             raise HTTPException(status_code=503, detail=detail) from exc
         connectivity_markers = (
             "Connection error",
