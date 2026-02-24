@@ -13,12 +13,27 @@ interface Selection {
   end: CellPosition;
 }
 
+type SelectionSource = 'cell' | 'row' | 'column' | null;
+
+const buildArrowCursor = (direction: 'left' | 'right' | 'down') => {
+  const paths = {
+    left: '<path d="M6 12L14 5V10H20V14H14V19L6 12Z" fill="#2563EB"/>',
+    right: '<path d="M18 12L10 5V10H4V14H10V19L18 12Z" fill="#2563EB"/>',
+    down: '<path d="M12 18L5 10H10V4H14V10H19L12 18Z" fill="#2563EB"/>',
+  };
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${paths[direction]}</svg>`;
+  const encodedSvg = encodeURIComponent(svg);
+  return `url("data:image/svg+xml,${encodedSvg}") 12 12, auto`;
+};
+
 const DataPreview: React.FC = () => {
   const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, xAxisColumn, setXAxisColumn, setSelectedDataRange } = useAppContext();
   const { t } = useLanguage();
   const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [selectionSource, setSelectionSource] = useState<SelectionSource>(null);
   const [isSelecting, setIsSelecting] = useState(false); // mouse drag selecting
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
   const [editingHeader, setEditingHeader] = useState<number | null>(null);
@@ -41,6 +56,13 @@ const DataPreview: React.FC = () => {
   const resizeStartX = useRef<number>(0);
   const originalWidth = useRef<number>(0);
   const tableRef = useRef<HTMLDivElement>(null);
+  const indexDirectionCursor = buildArrowCursor(isRtl ? 'left' : 'right');
+  const columnHeaderCursor = buildArrowCursor('down');
+
+  const indexDigits = String(Math.max(1, viewData.length)).length;
+  const indexColumnWidth = Math.max(24, 16 + indexDigits * 9);
+
+  const getInitialColumnWidth = useCallback(() => 72, []);
 
   // Sync local state when rawData changes (discarding unsaved local edits)
   useEffect(() => {
@@ -49,14 +71,15 @@ const DataPreview: React.FC = () => {
       setActiveSheet(activeIdx);
       setViewData(rawData.data.map(r => ({ ...r })));
       setHeaders([...rawData.headers]);
-      setColumnWidths(rawData.headers.map(() => 120));
+      setColumnWidths(rawData.headers.map(() => getInitialColumnWidth()));
       setSortState(null);
       setSelection(null);
+      setSelectionSource(null);
       setEditingCell(null);
       setEditingHeader(null);
       setUnsavedChanges(false);
     }
-  }, [rawData]);
+  }, [rawData, getInitialColumnWidth]);
 
   // Keep hooks above unconditional; handle empty state just before render
 
@@ -70,6 +93,7 @@ const DataPreview: React.FC = () => {
   };
 
   const beginSelection = (row: number, col: number, extendFromAnchor = false) => {
+    setSelectionSource('cell');
     if (extendFromAnchor && selection) {
       setSelection({ start: selection.start, end: { row, col } });
       setIsSelecting(false);
@@ -410,7 +434,7 @@ const DataPreview: React.FC = () => {
     newHeaders.splice(colIndex + 1, 0, newHeader);
     const newData = viewData.map((row) => ({ ...row, [newHeader]: '' }));
     const newWidths = [...columnWidths];
-    newWidths.splice(colIndex + 1, 0, 120);
+    newWidths.splice(colIndex + 1, 0, getInitialColumnWidth(newHeaders.length));
     setHeaders(newHeaders);
     setViewData(newData);
     setColumnWidths(newWidths);
@@ -426,7 +450,7 @@ const DataPreview: React.FC = () => {
       const h = uniqueHeaderName('New Column');
       added.push(h);
       newHeaders.splice(colIndex + 1 + i, 0, h);
-      newWidths.splice(colIndex + 1 + i, 0, 120);
+      newWidths.splice(colIndex + 1 + i, 0, getInitialColumnWidth(newHeaders.length));
     }
     const newData = viewData.map((row) => {
       const r: Record<string, any> = { ...row };
@@ -513,7 +537,7 @@ const DataPreview: React.FC = () => {
     clipboard.columns.forEach((col, idx) => {
       const name = clipboard.cut ? col.header : uniqueHeaderName(col.header);
       newHeaders.splice(colIndex + 1 + idx, 0, name);
-      newWidths.splice(colIndex + 1 + idx, 0, 120);
+      newWidths.splice(colIndex + 1 + idx, 0, getInitialColumnWidth(newHeaders.length));
       addedNames.push(name);
     });
     const newData = viewData.map((row, rowIndex) => {
@@ -662,10 +686,14 @@ const DataPreview: React.FC = () => {
   };
 
   const selectColumn = (col: number) => {
+    setIsSelecting(false);
+    setSelectionSource('column');
     setSelection({ start: { row: 0, col }, end: { row: viewData.length - 1, col } });
   };
 
   const selectRow = (row: number) => {
+    setIsSelecting(false);
+    setSelectionSource('row');
     setSelection({ start: { row, col: 0 }, end: { row, col: headers.length - 1 } });
   };
 
@@ -750,12 +778,23 @@ const DataPreview: React.FC = () => {
       return;
     }
 
+    if (selectionSource !== 'cell') {
+      setSelectedDataRange(null);
+      return;
+    }
+
     const minRow = Math.max(0, Math.min(selection.start.row, selection.end.row));
     const maxRow = Math.min(viewData.length - 1, Math.max(selection.start.row, selection.end.row));
     const minCol = Math.max(0, Math.min(selection.start.col, selection.end.col));
     const maxCol = Math.min(headers.length - 1, Math.max(selection.start.col, selection.end.col));
 
     if (maxRow < minRow || maxCol < minCol) {
+      setSelectedDataRange(null);
+      return;
+    }
+
+    const isSingleCell = minRow === maxRow && minCol === maxCol;
+    if (isSingleCell) {
       setSelectedDataRange(null);
       return;
     }
@@ -791,7 +830,7 @@ const DataPreview: React.FC = () => {
       startCol: minCol,
       endCol: maxCol,
     });
-  }, [selection, headers, selectedColumns, selectedChartType, xAxisColumn, setSelectedColumns, setSelectedDataRange, setXAxisColumn, viewData.length]);
+  }, [selection, selectionSource, headers, selectedColumns, selectedChartType, xAxisColumn, setSelectedColumns, setSelectedDataRange, setXAxisColumn, viewData.length]);
 
   const isCellSelected = (row: number, col: number) => {
     if (!selection) return false;
@@ -800,6 +839,16 @@ const DataPreview: React.FC = () => {
     const minCol = Math.min(selection.start.col, selection.end.col);
     const maxCol = Math.max(selection.start.col, selection.end.col);
     return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+  };
+
+  const isRowIndexSelected = (row: number) => {
+    if (!selection || headers.length === 0) return false;
+    const minRow = Math.min(selection.start.row, selection.end.row);
+    const maxRow = Math.max(selection.start.row, selection.end.row);
+    const minCol = Math.min(selection.start.col, selection.end.col);
+    const maxCol = Math.max(selection.start.col, selection.end.col);
+    const fullRowSelection = minCol === 0 && maxCol === headers.length - 1;
+    return fullRowSelection && row >= minRow && row <= maxRow;
   };
 
   const isSelectionHandleCell = (row: number, col: number) => {
@@ -834,6 +883,8 @@ const DataPreview: React.FC = () => {
 
   // Header drag selection handlers
   const beginColumnRangeSelection = (colIndex: number) => {
+    setIsSelecting(false);
+    setSelectionSource('column');
     setHeaderDrag({ kind: 'column', start: colIndex });
     setSelection({ start: { row: 0, col: colIndex }, end: { row: viewData.length - 1, col: colIndex } });
   };
@@ -845,6 +896,8 @@ const DataPreview: React.FC = () => {
   };
 
   const beginRowRangeSelection = (rowIndex: number) => {
+    setIsSelecting(false);
+    setSelectionSource('row');
     setHeaderDrag({ kind: 'row', start: rowIndex });
     setSelection({ start: { row: rowIndex, col: 0 }, end: { row: rowIndex, col: headers.length - 1 } });
   };
@@ -932,16 +985,16 @@ const DataPreview: React.FC = () => {
 
       {/* Grid */}
       <div className="overflow-auto max-h-[400px] select-none">
-        <table className="w-full border-collapse">
+        <table className="border-collapse">
           {/* Column Headers */}
           <thead className="sticky top-0 bg-gray-50 z-10">
             <tr>
-              <th className="w-10 border border-gray-200 bg-gray-100" />
+              <th style={{ width: indexColumnWidth, minWidth: indexColumnWidth }} className="border border-gray-200 bg-gray-100" />
               {columnLetters.map((letter, colIndex) => (
                 <th
                   key={letter}
-                  style={{ width: columnWidths[colIndex] }}
-                  className="relative border border-gray-200 bg-gray-100 px-1 py-0.5 text-xs font-semibold text-gray-600 select-none cursor-pointer group"
+                  style={{ width: columnWidths[colIndex], cursor: columnHeaderCursor }}
+                  className="relative border border-gray-200 bg-gray-100 px-1 py-0.5 text-xs font-semibold text-gray-600 select-none group"
                   onClick={() => selectColumn(colIndex)}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return; // left click only
@@ -962,7 +1015,7 @@ const DataPreview: React.FC = () => {
               ))}
             </tr>
             <tr>
-              <th className="w-10 border border-gray-200 bg-gray-100 text-center text-xs font-medium text-gray-600">#</th>
+              <th style={{ width: indexColumnWidth, minWidth: indexColumnWidth }} className="border border-gray-200 bg-gray-100 text-center text-xs font-medium text-gray-600">#</th>
               {headers.map((header, colIndex) => {
                 const sorting = sortState && sortState.col === colIndex ? sortState.dir : null;
                 const isY = selectedColumns && selectedColumns.includes(header);
@@ -977,12 +1030,6 @@ const DataPreview: React.FC = () => {
                     sortByColumn(colIndex);
                   }}
                   onDoubleClick={() => startHeaderEdit(colIndex)}
-                  onMouseDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.preventDefault();
-                    beginColumnRangeSelection(colIndex);
-                  }}
-                  onMouseEnter={() => extendColumnRangeSelection(colIndex)}
                   onContextMenu={(e) => openContextMenu(e, 'column', undefined, colIndex)}
                 >
                     {editingHeader === colIndex ? (
@@ -1055,7 +1102,8 @@ const DataPreview: React.FC = () => {
             {viewData.map((row, rowIndex) => (
               <tr key={rowIndex} className="hover:bg-gray-50">
                 <td
-                  className={`border border-gray-200 bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 text-center cursor-pointer select-none ${selection && rowIndex >= Math.min(selection.start.row, selection.end.row) && rowIndex <= Math.max(selection.start.row, selection.end.row) ? 'bg-blue-100' : ''}`}
+                  style={{ width: indexColumnWidth, minWidth: indexColumnWidth, cursor: indexDirectionCursor }}
+                  className={`border border-gray-200 px-2 py-1 text-xs font-medium text-center select-none ${isRowIndexSelected(rowIndex) ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-600'}`}
                   onClick={() => selectRow(rowIndex)}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return;
