@@ -6,6 +6,13 @@ export interface DataPoint {
   [key: string]: Primitive;
 }
 
+export interface DataSelectionRange {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
 export interface Sheet {
   name: string;
   data: DataPoint[];

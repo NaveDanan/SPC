@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import FileUploadPanel from '../upload/FileUploadPanel';
@@ -10,11 +10,10 @@ import RuleViolationsPanel from '../analysis/RuleViolationsPanel';
 const Dashboard: React.FC = () => {
   const { isDataLoaded, processedData, errorMessage } = useAppContext();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'data' | 'chart' | 'analysis'>('data');
 
   
   return (
-    <div className="container mx-auto px-4 py-6">
+    <div className="w-full px-4 xl:px-6 py-6">
       {!isDataLoaded && !processedData && (
         <div className="mb-8 bg-white rounded-lg shadow-md p-6 flex flex-col md:flex-row items-center gap-6">
 
@@ -44,62 +43,39 @@ const Dashboard: React.FC = () => {
         </div>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left panel */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="border-b border-gray-200">
-              <nav className="flex">
-                <button
-                  className={`px-4 py-3 font-medium text-sm ${activeTab === 'data' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
-                  onClick={() => setActiveTab('data')}
-                >
-                  {t('fileUpload.title')}
-                </button>
-                <button
-                  className={`px-4 py-3 font-medium text-sm ${activeTab === 'chart' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
-                  onClick={() => setActiveTab('chart')}
-                >
-                  {t('controlPanel.title')}
-                </button>
-                <button
-                  className={`px-4 py-3 font-medium text-sm ${activeTab === 'analysis' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-gray-600 hover:text-gray-800'}`}
-                  onClick={() => setActiveTab('analysis')}
-                >
-                  {t('ruleViolations.title')}
-                </button>
-              </nav>
-            </div>
-            
-            <div className="p-4">
-              {activeTab === 'data' && <FileUploadPanel />}
-              {activeTab === 'chart' && <ControlPanel />}
-              {activeTab === 'analysis' && <RuleViolationsPanel />}
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <FileUploadPanel />
           </div>
         </div>
-        
-        {/* Right panel */}
-        <div className="lg:col-span-2">
-          <div className="grid grid-cols-1 gap-6">
-            {/* Data preview */}
-            {isDataLoaded && (
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <h2 className="text-lg font-medium text-gray-800 mb-3">{t('dataPreview.title')}</h2>
-                <DataPreview />
-              </div>
-            )}
-            
-            {/* Chart area */}
-            {processedData && (
-              <div className="bg-white rounded-lg shadow-md p-4">
-                <ChartPanel />
-              </div>
-            )}
 
-            {/* Copilot chat removed in favor of AI Chart Assistant panel */}
+        <div className="lg:col-span-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <ControlPanel />
           </div>
         </div>
+
+        <div className="lg:col-span-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <RuleViolationsPanel />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 mt-6">
+        {isDataLoaded && (
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <h2 className="text-lg font-medium text-gray-800 mb-3">{t('dataPreview.title')}</h2>
+            <DataPreview />
+          </div>
+        )}
+
+        {processedData && (
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <ChartPanel />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { Copy, Clipboard, ArrowUpDown, ArrowDown, ArrowUp, Download, Plus, Trash2, Check } from 'lucide-react';
+import { Copy, Clipboard, ArrowUpDown, ArrowDown, ArrowUp, Download, Trash2, Check } from 'lucide-react';
 
 interface CellPosition {
   row: number;
@@ -14,8 +14,9 @@ interface Selection {
 }
 
 const DataPreview: React.FC = () => {
-  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, xAxisColumn, setXAxisColumn } = useAppContext();
+  const { rawData, setRawData, setActiveSheetIndex, addSheet, copySheet, removeSheet, moveSheet, renameSheet, selectedColumns, setSelectedColumns, selectedChartType, xAxisColumn, setXAxisColumn, setSelectedDataRange } = useAppContext();
   const { t } = useLanguage();
+  const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
   const [activeSheet, setActiveSheet] = useState(0);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [isSelecting, setIsSelecting] = useState(false); // mouse drag selecting
@@ -30,6 +31,7 @@ const DataPreview: React.FC = () => {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [headerDrag, setHeaderDrag] = useState<{ kind: 'row' | 'column' | null; start: number | null }>({ kind: null, start: null });
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; target: 'row' | 'column' | 'cell' | null; row?: number; col?: number }>({ visible: false, x: 0, y: 0, target: null });
+  const [spcSubmenuOpen, setSpcSubmenuOpen] = useState(false);
   const [clipboard, setClipboard] = useState<
     | { kind: 'row'; rows: Record<string, any>[]; cut: boolean }
     | { kind: 'column'; columns: { header: string; values: any[] }[]; cut: boolean }
@@ -67,7 +69,12 @@ const DataPreview: React.FC = () => {
     return `${startCol}${selection.start.row + 1}:${endCol}${selection.end.row + 1}`;
   };
 
-  const beginSelection = (row: number, col: number) => {
+  const beginSelection = (row: number, col: number, extendFromAnchor = false) => {
+    if (extendFromAnchor && selection) {
+      setSelection({ start: selection.start, end: { row, col } });
+      setIsSelecting(false);
+      return;
+    }
     setSelection({ start: { row, col }, end: { row, col } });
     setIsSelecting(true);
   };
@@ -96,7 +103,72 @@ const DataPreview: React.FC = () => {
 
   const openContextMenu = (e: React.MouseEvent, target: 'row' | 'column' | 'cell', row?: number, col?: number) => {
     e.preventDefault();
+    setSpcSubmenuOpen(false);
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, target, row, col });
+  };
+
+  const hasMultiCellSelection = () => {
+    if (!selection) return false;
+    return selection.start.row !== selection.end.row || selection.start.col !== selection.end.col;
+  };
+
+  const performSpcOnSelected = () => {
+    if (!selection || !rawData) return;
+    const minRow = Math.max(0, Math.min(selection.start.row, selection.end.row));
+    const maxRow = Math.min(viewData.length - 1, Math.max(selection.start.row, selection.end.row));
+    const minCol = Math.max(0, Math.min(selection.start.col, selection.end.col));
+    const maxCol = Math.min(headers.length - 1, Math.max(selection.start.col, selection.end.col));
+
+    if (maxRow < minRow || maxCol < minCol) return;
+
+    const selectedHeaders = headers.slice(minCol, maxCol + 1);
+    const selectedData = viewData.slice(minRow, maxRow + 1).map((row) => {
+      const nextRow: Record<string, any> = {};
+      selectedHeaders.forEach((header) => {
+        nextRow[header] = row[header];
+      });
+      return nextRow;
+    });
+
+    const existingSheets = rawData.sheets
+      ? [...rawData.sheets]
+      : [{ name: 'Sheet1', data: rawData.data, headers: rawData.headers }];
+
+    const baseName = 'SPC Selection';
+    let suffix = 1;
+    let newSheetName = `${baseName} ${suffix}`;
+    const usedNames = new Set(existingSheets.map((sheet) => sheet.name));
+    while (usedNames.has(newSheetName)) {
+      suffix += 1;
+      newSheetName = `${baseName} ${suffix}`;
+    }
+
+    const nextSheets = [
+      ...existingSheets,
+      {
+        name: newSheetName,
+        headers: selectedHeaders,
+        data: selectedData,
+      },
+    ];
+    const newActiveIndex = nextSheets.length - 1;
+
+    setRawData({
+      ...rawData,
+      sheets: nextSheets,
+      activeSheetIndex: newActiveIndex,
+      headers: selectedHeaders,
+      data: selectedData,
+    });
+    setActiveSheet(newActiveIndex);
+    setSelectedColumns([]);
+    setXAxisColumn(null);
+    setSelection(null);
+    setSelectedDataRange(null);
+    setUnsavedChanges(false);
+
+    setContextMenu({ ...contextMenu, visible: false });
+    setSpcSubmenuOpen(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -383,6 +455,9 @@ const DataPreview: React.FC = () => {
       const updated = selectedColumns.filter((h): h is string => typeof h === 'string' && h !== header);
       setSelectedColumns(updated);
     }
+    if (xAxisColumn === header) {
+      setXAxisColumn(null);
+    }
     setUnsavedChanges(true);
   };
 
@@ -407,6 +482,9 @@ const DataPreview: React.FC = () => {
     if (selectedColumns?.length) {
       const updated = selectedColumns.filter((h): h is string => typeof h === 'string' && !toDelete.has(h));
       setSelectedColumns(updated);
+    }
+    if (xAxisColumn && toDelete.has(xAxisColumn)) {
+      setXAxisColumn(null);
     }
     setUnsavedChanges(true);
   };
@@ -485,6 +563,76 @@ const DataPreview: React.FC = () => {
     setUnsavedChanges(true);
   };
 
+  const removeFirstRow = () => {
+    if (!viewData.length) return;
+    const newData = viewData.slice(1);
+    setViewData(newData);
+    setSelection(null);
+    setUnsavedChanges(true);
+  };
+
+  const useFirstRowAsHeaders = () => {
+    if (!viewData.length || !headers.length) return;
+
+    const firstRow = viewData[0] || {};
+    const taken = new Set<string>();
+    const nextHeaders = headers.map((oldHeader, index) => {
+      const raw = firstRow[oldHeader];
+      const base = raw === null || raw === undefined || String(raw).trim() === ''
+        ? `Column ${index + 1}`
+        : String(raw).trim();
+      if (!taken.has(base)) {
+        taken.add(base);
+        return base;
+      }
+      let suffix = 2;
+      let candidate = `${base} ${suffix}`;
+      while (taken.has(candidate)) {
+        suffix += 1;
+        candidate = `${base} ${suffix}`;
+      }
+      taken.add(candidate);
+      return candidate;
+    });
+
+    const remappedData = viewData.slice(1).map((row) => {
+      const mapped: Record<string, any> = {};
+      headers.forEach((oldHeader, index) => {
+        mapped[nextHeaders[index]] = row[oldHeader];
+      });
+      return mapped;
+    });
+
+    const selectedIndices = selectedColumns
+      .map((column) => headers.indexOf(column))
+      .filter((idx) => idx >= 0);
+    const remappedSelectedColumns = selectedIndices.map((idx) => nextHeaders[idx]);
+
+    const xAxisIndex = xAxisColumn ? headers.indexOf(xAxisColumn) : -1;
+    const remappedXAxis = xAxisIndex >= 0 ? nextHeaders[xAxisIndex] : null;
+
+    setHeaders(nextHeaders);
+    setViewData(remappedData);
+    setSelectedColumns(remappedSelectedColumns);
+    setXAxisColumn(remappedXAxis);
+
+    if (rawData) {
+      if (rawData.sheets && rawData.activeSheetIndex !== undefined) {
+        const sheets = rawData.sheets.map((sheet, index) =>
+          index === rawData.activeSheetIndex
+            ? { ...sheet, headers: nextHeaders, data: remappedData }
+            : sheet
+        );
+        setRawData({ ...rawData, sheets, headers: nextHeaders, data: remappedData });
+      } else {
+        setRawData({ ...rawData, headers: nextHeaders, data: remappedData });
+      }
+    }
+
+    setSelection(null);
+    setUnsavedChanges(false);
+  };
+
   const exportSelection = () => {
     if (!selection) return;
     const startRow = Math.min(selection.start.row, selection.end.row);
@@ -542,6 +690,13 @@ const DataPreview: React.FC = () => {
     });
     setHeaders(newHeaders);
     setViewData(newData);
+    if (selectedColumns?.length) {
+      const updated = selectedColumns.map((h) => (h === oldName ? newName : h));
+      setSelectedColumns(updated);
+    }
+    if (xAxisColumn === oldName) {
+      setXAxisColumn(newName);
+    }
     setEditingHeader(null);
     setUnsavedChanges(true);
   };
@@ -588,6 +743,56 @@ const DataPreview: React.FC = () => {
     }
   }, [selection, viewData, headers]);
 
+  // Keep selected range in app context so SPC uses only highlighted area
+  useEffect(() => {
+    if (!selection) {
+      setSelectedDataRange(null);
+      return;
+    }
+
+    const minRow = Math.max(0, Math.min(selection.start.row, selection.end.row));
+    const maxRow = Math.min(viewData.length - 1, Math.max(selection.start.row, selection.end.row));
+    const minCol = Math.max(0, Math.min(selection.start.col, selection.end.col));
+    const maxCol = Math.min(headers.length - 1, Math.max(selection.start.col, selection.end.col));
+
+    if (maxRow < minRow || maxCol < minCol) {
+      setSelectedDataRange(null);
+      return;
+    }
+
+    const rangeHeaders = headers.slice(minCol, maxCol + 1);
+    const isXbarChart = selectedChartType === 'xBarS' || selectedChartType === 'xBarR';
+
+    if (rangeHeaders.length > 0) {
+      if (isXbarChart) {
+        const nextY = rangeHeaders;
+        if (
+          selectedColumns.length !== nextY.length ||
+          nextY.some((header, index) => selectedColumns[index] !== header)
+        ) {
+          setSelectedColumns(nextY);
+        }
+      } else {
+        const matchingY = selectedColumns.filter((column) => rangeHeaders.includes(column));
+        const nextY = matchingY.length > 0 ? [matchingY[0]] : [rangeHeaders[0]];
+        if (selectedColumns.length !== 1 || selectedColumns[0] !== nextY[0]) {
+          setSelectedColumns(nextY);
+        }
+      }
+
+      if (xAxisColumn && !rangeHeaders.includes(xAxisColumn)) {
+        setXAxisColumn(null);
+      }
+    }
+
+    setSelectedDataRange({
+      startRow: minRow,
+      endRow: maxRow,
+      startCol: minCol,
+      endCol: maxCol,
+    });
+  }, [selection, headers, selectedColumns, selectedChartType, xAxisColumn, setSelectedColumns, setSelectedDataRange, setXAxisColumn, viewData.length]);
+
   const isCellSelected = (row: number, col: number) => {
     if (!selection) return false;
     const minRow = Math.min(selection.start.row, selection.end.row);
@@ -595,6 +800,36 @@ const DataPreview: React.FC = () => {
     const minCol = Math.min(selection.start.col, selection.end.col);
     const maxCol = Math.max(selection.start.col, selection.end.col);
     return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+  };
+
+  const isSelectionHandleCell = (row: number, col: number) => {
+    if (!selection) return false;
+    const maxRow = Math.max(selection.start.row, selection.end.row);
+    const maxCol = Math.max(selection.start.col, selection.end.col);
+    return row === maxRow && col === maxCol;
+  };
+
+  const getSelectionOutlineEdges = (row: number, col: number) => {
+    if (!selection) {
+      return { top: false, bottom: false, start: false, end: false };
+    }
+
+    const minRow = Math.min(selection.start.row, selection.end.row);
+    const maxRow = Math.max(selection.start.row, selection.end.row);
+    const minCol = Math.min(selection.start.col, selection.end.col);
+    const maxCol = Math.max(selection.start.col, selection.end.col);
+
+    const inside = row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+    if (!inside) {
+      return { top: false, bottom: false, start: false, end: false };
+    }
+
+    return {
+      top: row === minRow,
+      bottom: row === maxRow,
+      start: col === minCol,
+      end: col === maxCol,
+    };
   };
 
   // Header drag selection handlers
@@ -643,6 +878,22 @@ const DataPreview: React.FC = () => {
           <button onClick={exportSelection} disabled={!selection} className="p-1 hover:bg-gray-200 rounded disabled:opacity-40" title={t('dataPreview.export')}>
             <Download size={16} />
           </button>
+          <button
+            onClick={removeFirstRow}
+            disabled={viewData.length === 0}
+            className="p-1 hover:bg-gray-200 rounded disabled:opacity-40"
+            title={t('dataPreview.removeFirstRow')}
+          >
+            <Trash2 size={16} />
+          </button>
+          <button
+            onClick={useFirstRowAsHeaders}
+            disabled={viewData.length === 0 || headers.length === 0}
+            className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
+            title={t('dataPreview.useFirstRowAsHeaders')}
+          >
+            {t('dataPreview.useFirstRowAsHeaders')}
+          </button>
           <div className="ml-3 text-xs text-gray-600 min-w-[120px]">{selection && `${t('dataPreview.selected')} ${getSelectionRange()}`}</div>
         </div>
         <div className="flex items-center gap-3 ml-auto text-xs">
@@ -680,7 +931,7 @@ const DataPreview: React.FC = () => {
       </div>
 
       {/* Grid */}
-      <div className="overflow-auto max-h-[400px]">
+      <div className="overflow-auto max-h-[400px] select-none">
         <table className="w-full border-collapse">
           {/* Column Headers */}
           <thead className="sticky top-0 bg-gray-50 z-10">
@@ -694,6 +945,7 @@ const DataPreview: React.FC = () => {
                   onClick={() => selectColumn(colIndex)}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return; // left click only
+                    e.preventDefault();
                     beginColumnRangeSelection(colIndex);
                   }}
                   onMouseEnter={() => extendColumnRangeSelection(colIndex)}
@@ -727,6 +979,7 @@ const DataPreview: React.FC = () => {
                   onDoubleClick={() => startHeaderEdit(colIndex)}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return;
+                    e.preventDefault();
                     beginColumnRangeSelection(colIndex);
                   }}
                   onMouseEnter={() => extendColumnRangeSelection(colIndex)}
@@ -806,6 +1059,7 @@ const DataPreview: React.FC = () => {
                   onClick={() => selectRow(rowIndex)}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return;
+                    e.preventDefault();
                     beginRowRangeSelection(rowIndex);
                   }}
                   onMouseEnter={() => extendRowRangeSelection(rowIndex)}
@@ -815,6 +1069,8 @@ const DataPreview: React.FC = () => {
                 </td>
                 {headers.map((header, colIndex) => {
                   const selected = isCellSelected(rowIndex, colIndex);
+                  const showSelectionHandle = selected && isSelectionHandleCell(rowIndex, colIndex);
+                  const outlineEdges = getSelectionOutlineEdges(rowIndex, colIndex);
                   const value = row[header] ?? '';
                   const isY = selectedColumns && selectedColumns.includes(header);
                   const isX = xAxisColumn === header;
@@ -822,9 +1078,16 @@ const DataPreview: React.FC = () => {
                     <td
                       key={`${rowIndex}-${colIndex}`}
                       style={{ width: columnWidths[colIndex] }}
-                      className={`border border-gray-200 px-2 py-1 text-xs whitespace-nowrap ${selected ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'} ${editingCell?.row === rowIndex && editingCell?.col === colIndex ? 'p-0' : ''}`}
-                      onMouseDown={() => beginSelection(rowIndex, colIndex)}
-                      onMouseMove={() => extendSelection(rowIndex, colIndex)}
+                      className={`relative group border border-gray-200 px-2 py-1 text-xs whitespace-nowrap ${selected ? 'bg-blue-100' : isY ? 'bg-emerald-50' : isX ? 'bg-amber-50' : 'bg-white'} ${editingCell?.row === rowIndex && editingCell?.col === colIndex ? 'p-0' : ''}`}
+                      onMouseDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        beginSelection(rowIndex, colIndex, e.shiftKey);
+                      }}
+                      onMouseMove={(e) => {
+                        if (isSelecting) e.preventDefault();
+                        extendSelection(rowIndex, colIndex);
+                      }}
                       onMouseUp={endSelection}
                       onDoubleClick={() => handleDoubleClick(rowIndex, colIndex)}
                       onContextMenu={(e) => openContextMenu(e, 'cell', rowIndex, colIndex)}
@@ -843,7 +1106,23 @@ const DataPreview: React.FC = () => {
                           }}
                         />
                       ) : (
-                        <span className="block truncate" title={String(value)}>{String(value)}</span>
+                        <>
+                          <span className="block truncate" title={String(value)}>{String(value)}</span>
+                          {outlineEdges.top && <span className="absolute top-0 left-0 right-0 h-px bg-green-500 pointer-events-none z-10" />}
+                          {outlineEdges.bottom && <span className="absolute bottom-0 left-0 right-0 h-px bg-green-500 pointer-events-none z-10" />}
+                          {outlineEdges.start && (
+                            <span className={`absolute top-0 bottom-0 w-px bg-green-500 pointer-events-none z-10 ${isRtl ? 'right-0' : 'left-0'}`} />
+                          )}
+                          {outlineEdges.end && (
+                            <span className={`absolute top-0 bottom-0 w-px bg-green-500 pointer-events-none z-10 ${isRtl ? 'left-0' : 'right-0'}`} />
+                          )}
+                          {showSelectionHandle && (
+                            <span
+                              className={`absolute -bottom-0.5 h-2.5 w-2.5 bg-green-500 border border-white rounded-sm opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${isRtl ? '-left-0.5' : '-right-0.5'}`}
+                              title="Multi-selection handle"
+                            />
+                          )}
+                        </>
                       )}
                     </td>
                   );
@@ -956,6 +1235,28 @@ const DataPreview: React.FC = () => {
           )}
           {contextMenu.target === 'cell' && (
             <ul className="py-1">
+              {hasMultiCellSelection() && (
+                <li className="relative">
+                  <button
+                    className="w-full text-left px-3 py-1.5 hover:bg-gray-100 flex items-center justify-between"
+                    onClick={() => setSpcSubmenuOpen((open) => !open)}
+                  >
+                    <span>SPC</span>
+                    <span className="text-xs text-gray-500">▶</span>
+                  </button>
+                  {spcSubmenuOpen && (
+                    <div className="absolute top-0 left-full ml-1 bg-white border border-gray-200 rounded shadow-lg min-w-[180px] z-10">
+                      <button
+                        className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                        onClick={performSpcOnSelected}
+                      >
+                        Perform on selected
+                      </button>
+                    </div>
+                  )}
+                </li>
+              )}
+              {hasMultiCellSelection() && <li className="border-t my-1" />}
               <li>
                 <button className="w-full text-left px-3 py-1.5 hover:bg-gray-100" onClick={() => { if (contextMenu.row !== undefined && contextMenu.col !== undefined) copyCellAt(contextMenu.row, contextMenu.col, false); setContextMenu({ ...contextMenu, visible: false }); }}>Copy Cell</button>
               </li>

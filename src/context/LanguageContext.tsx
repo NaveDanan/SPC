@@ -143,6 +143,8 @@ const translations: Record<Language, Record<string, string>> = {
     'dataPreview.selected': 'Selected:',
     'dataPreview.unsaved': 'Unsaved changes',
     'dataPreview.apply': 'Apply',
+    'dataPreview.removeFirstRow': 'Remove First Row',
+    'dataPreview.useFirstRowAsHeaders': 'Use First Row as Headers',
     'dataPreview.noData': 'No data available. Please upload a file.',
     
     // Rule Violations Panel
@@ -295,6 +297,8 @@ const translations: Record<Language, Record<string, string>> = {
     'dataPreview.selected': 'נבחר:',
     'dataPreview.unsaved': 'שינויים לא שמורים',
     'dataPreview.apply': 'החל',
+    'dataPreview.removeFirstRow': 'הסר שורה ראשונה',
+    'dataPreview.useFirstRowAsHeaders': 'השתמש בשורה הראשונה ככותרות',
     'dataPreview.noData': 'אין נתונים זמינים. נא להעלות קובץ.',
     
     // Rule Violations Panel

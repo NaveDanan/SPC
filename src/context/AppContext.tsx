@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { ChartType, DataSet, ProcessedData, ChartOptions, Sheet } from '../types/DataTypes';
+import { ChartType, DataSet, ProcessedData, ChartOptions, Sheet, DataSelectionRange } from '../types/DataTypes';
 import { calculateControlLimits } from '../utils/spcCalculations';
 import { detectRuleViolations } from '../utils/westernElectricRules';
 
@@ -23,6 +23,8 @@ interface AppContextType {
   setSelectedColumns: (columns: string[]) => void;
   xAxisColumn: string | null;
   setXAxisColumn: (col: string | null) => void;
+  selectedDataRange: DataSelectionRange | null;
+  setSelectedDataRange: (range: DataSelectionRange | null) => void;
   sampleSize: number;
   setSampleSize: (size: number) => void;
   errorMessage: string | null;
@@ -53,6 +55,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [xAxisColumn, setXAxisColumn] = useState<string | null>(null);
+  const [selectedDataRange, setSelectedDataRange] = useState<DataSelectionRange | null>(null);
   const [sampleSize, setSampleSize] = useState<number>(5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -62,7 +65,25 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     if (rawData && selectedColumns.length > 0) {
       processData();
     }
-  }, [rawData, selectedColumns, selectedChartType, sampleSize]);
+  }, [rawData, selectedColumns, selectedChartType, sampleSize, selectedDataRange, xAxisColumn]);
+
+  useEffect(() => {
+    if (!rawData) {
+      if (selectedColumns.length > 0) setSelectedColumns([]);
+      if (xAxisColumn !== null) setXAxisColumn(null);
+      return;
+    }
+
+    const availableHeaders = new Set(rawData.headers);
+    const filteredSelectedColumns = selectedColumns.filter((column) => availableHeaders.has(column));
+    if (filteredSelectedColumns.length !== selectedColumns.length) {
+      setSelectedColumns(filteredSelectedColumns);
+    }
+
+    if (xAxisColumn && !availableHeaders.has(xAxisColumn)) {
+      setXAxisColumn(null);
+    }
+  }, [rawData, selectedColumns, xAxisColumn]);
 
   const processData = async () => {
     if (!rawData || selectedColumns.length === 0) return;
@@ -76,17 +97,47 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         ? selectedColumns.length
         : sampleSize;
 
-      // Extract only the selected columns from the raw data
-      const filteredData = rawData.data.map(row => {
+      const totalRows = rawData.data.length;
+      const totalCols = rawData.headers.length;
+
+      const rowStart = selectedDataRange ? Math.max(0, Math.min(selectedDataRange.startRow, selectedDataRange.endRow)) : 0;
+      const rowEnd = selectedDataRange ? Math.min(totalRows - 1, Math.max(selectedDataRange.startRow, selectedDataRange.endRow)) : totalRows - 1;
+      const colStart = selectedDataRange ? Math.max(0, Math.min(selectedDataRange.startCol, selectedDataRange.endCol)) : 0;
+      const colEnd = selectedDataRange ? Math.min(totalCols - 1, Math.max(selectedDataRange.startCol, selectedDataRange.endCol)) : totalCols - 1;
+
+      const rangeHeaders = rawData.headers.slice(colStart, colEnd + 1);
+      const effectiveSelectedColumns = selectedColumns.filter((column) => rangeHeaders.includes(column));
+
+      if (effectiveSelectedColumns.length === 0) {
+        setProcessedData(null);
+        setErrorMessage('Selected table range does not include the current Y column(s).');
+        return;
+      }
+
+      const xAxisInRange = xAxisColumn && rangeHeaders.includes(xAxisColumn) ? xAxisColumn : null;
+      const projectionColumns = xAxisInRange
+        ? Array.from(new Set([...effectiveSelectedColumns, xAxisInRange]))
+        : effectiveSelectedColumns;
+
+      const scopedRows = rawData.data.slice(rowStart, rowEnd + 1);
+
+      // Extract only the selected columns from the selected row range
+      const filteredData = scopedRows.map(row => {
         const newRow: Record<string, any> = {};
-        selectedColumns.forEach(col => {
+        projectionColumns.forEach(col => {
           newRow[col] = row[col];
         });
         return newRow;
       });
 
+      if (filteredData.length === 0) {
+        setProcessedData(null);
+        setErrorMessage('Selected table range is empty.');
+        return;
+      }
+
       // Calculate control limits based on the chart type
-      const controlLimits = calculateControlLimits(filteredData, selectedColumns[0], selectedChartType, effectiveSampleSize);
+      const controlLimits = calculateControlLimits(filteredData, effectiveSelectedColumns[0], selectedChartType, effectiveSampleSize);
 
       // Detect rule violations — align series with chart type semantics
       let violations;
@@ -95,8 +146,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         const means: number[] = [];
         if (selectedColumns.length > 1) {
           // Multi-column per-row subgrouping
-          const valueColumns = selectedColumns;
-          rawData.data.forEach((row) => {
+          const valueColumns = effectiveSelectedColumns;
+          filteredData.forEach((row) => {
             const vals = valueColumns.map(h => parseFloat(row[h]));
             if (vals.every(v => !isNaN(v))) {
               const group = vals.slice(0, effectiveSampleSize);
@@ -108,7 +159,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
           });
         } else {
           // Single-column sequential subgrouping
-          const values = filteredData.map(row => parseFloat(row[selectedColumns[0]])).filter(v => !isNaN(v));
+          const values = filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]])).filter(v => !isNaN(v));
           for (let i = 0; i < values.length; i += effectiveSampleSize) {
             const group = values.slice(i, i + effectiveSampleSize);
             if (group.length === effectiveSampleSize) {
@@ -129,7 +180,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         violations = detectRuleViolations(series as any, 'v', xbarControl);
       } else {
         // Default behavior (Individuals, p, np, ewma, etc.)
-        violations = detectRuleViolations(filteredData, selectedColumns[0], controlLimits);
+        violations = detectRuleViolations(filteredData, effectiveSelectedColumns[0], controlLimits);
       }
 
       setProcessedData({
@@ -139,8 +190,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         statistics: {
           mean: controlLimits.centerLine,
           standardDeviation: controlLimits.sigma,
-          min: Math.min(...filteredData.map(row => parseFloat(row[selectedColumns[0]]))),
-          max: Math.max(...filteredData.map(row => parseFloat(row[selectedColumns[0]]))),
+          min: Math.min(...filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]]))),
+          max: Math.max(...filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]]))),
           count: filteredData.length,
         }
       });
@@ -156,6 +207,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     setRawData(null);
     setProcessedData(null);
     setSelectedColumns([]);
+    setSelectedDataRange(null);
     setErrorMessage(null);
   };
 
@@ -250,6 +302,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     setSelectedColumns,
     xAxisColumn,
     setXAxisColumn,
+    selectedDataRange,
+    setSelectedDataRange,
     sampleSize,
     setSampleSize,
     errorMessage,
