@@ -13,9 +13,6 @@ RUN pnpm build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
-# Lightweight HTTP client needed for container health checks
-RUN apk add --no-cache curl
-
 # Install static file server
 RUN npm install -g serve
 
@@ -28,7 +25,7 @@ EXPOSE 8080
 # Run as non-root user provided by node image
 USER node
 
-HEALTHCHECK --interval=30s --timeout=3s CMD curl -fsS http://127.0.0.1:8080/ || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD node -e "fetch('http://127.0.0.1:8080/').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # Labels for OCI compliance
 LABEL org.opencontainers.image.source="https://github.com/NaveDanan/SPC" \

@@ -9,7 +9,7 @@ const setSampleSize = vi.fn();
 const setChartOptions = vi.fn();
 const fetchMock = vi.fn();
 
-const appContextMock = {
+const appContextMock: any = {
   rawData: {
     data: [
       { A: 1, B: 2, Date: '2024-01-01' },
@@ -65,6 +65,33 @@ describe('AiAssistantPanel Agent Mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchMock.mockReset();
+    appContextMock.rawData = {
+      data: [
+        { A: 1, B: 2, Date: '2024-01-01' },
+        { A: 2, B: 3, Date: '2024-01-02' },
+      ],
+      headers: ['A', 'B', 'Date'],
+      fileName: 'test.xlsx',
+      fileType: 'xlsx',
+      sheets: [{ name: 'Sheet1', data: [{ A: 1, B: 2, Date: '2024-01-01' }], headers: ['A', 'B', 'Date'] }],
+      activeSheetIndex: 0,
+    };
+    appContextMock.selectedColumns = ['A'];
+    appContextMock.xAxisColumn = null;
+    appContextMock.sampleSize = 3;
+    appContextMock.selectedChartType = 'individual';
+    appContextMock.chartOptions = {
+      title: 'SPC Analysis Chart',
+      xAxisLabel: 'Sample',
+      yAxisLabel: 'Value',
+      showControlLimits: true,
+      showCenterLine: true,
+      showRuleViolations: true,
+      colorScheme: 'default',
+      showSigma1: true,
+      showSigma2: true,
+      showSigma3: true,
+    };
 
     fetchMock.mockResolvedValue({
         ok: true,
@@ -95,14 +122,83 @@ describe('AiAssistantPanel Agent Mode', () => {
       expect(setSelectedChartType).toHaveBeenCalledWith('xBarR');
       expect(setSelectedColumns).toHaveBeenCalledWith(['A', 'B']);
       expect(setXAxisColumn).toHaveBeenCalledWith('Date');
-      expect(setSampleSize).toHaveBeenCalledWith(4);
+      expect(setSampleSize).toHaveBeenCalledWith(2);
       expect(setChartOptions).toHaveBeenCalledWith({
         ...appContextMock.chartOptions,
         title: 'XBar-R by Date',
         xAxisLabel: 'Collection Date',
         yAxisLabel: 'Defect Count',
       });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('auto-applies X-bar S multi-sample recommendations to chart controls', async () => {
+    appContextMock.rawData = {
+      data: [
+        { Sample_1: 11, Sample_2: 12, Sample_3: 10, Sample_4: 13, Sample_5: 12 },
+        { Sample_1: 12, Sample_2: 13, Sample_3: 11, Sample_4: 14, Sample_5: 13 },
+      ],
+      headers: ['Sample_1', 'Sample_2', 'Sample_3', 'Sample_4', 'Sample_5'],
+      fileName: 'samples.xlsx',
+      fileType: 'xlsx',
+      sheets: [
+        {
+          name: 'Sheet1',
+          data: [{ Sample_1: 11, Sample_2: 12, Sample_3: 10, Sample_4: 13, Sample_5: 12 }],
+          headers: ['Sample_1', 'Sample_2', 'Sample_3', 'Sample_4', 'Sample_5'],
+        },
+      ],
+      activeSheetIndex: 0,
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '- Initial non-agent recommendation.',
+              },
+            },
+          ],
+        }),
+        statusText: 'OK',
+      })
+      .mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: `- Switch to X-bar S chart.\n\n\`\`\`json
+{"recommendation":{"chartType":"xBarS","yColumns":["Sample_1","Sample_2","Sample_3","Sample_4","Sample_5"],"xAxisColumn":null,"sampleSize":2,"chartLabel":"X-bar and S Control Chart","zAxisLabel":"Subgroup Index","yAxisLabel":"Measurement Value","reason":"Use all five samples"}}
+\`\`\``,
+            },
+          },
+        ],
+      }),
+      statusText: 'OK',
+    });
+
+    render(<AiAssistantPanel onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('ai.agentModeOff'));
+
+    await waitFor(() => {
+      expect(setSelectedChartType).toHaveBeenCalledWith('xBarS');
+      expect(setSelectedColumns).toHaveBeenCalledWith(['Sample_1', 'Sample_2', 'Sample_3', 'Sample_4', 'Sample_5']);
+      expect(setXAxisColumn).toHaveBeenCalledWith(null);
+      expect(setSampleSize).toHaveBeenCalledWith(5);
+      expect(setChartOptions).toHaveBeenCalledWith({
+        ...appContextMock.chartOptions,
+        title: 'X-bar and S Control Chart',
+        xAxisLabel: 'Subgroup Index',
+        yAxisLabel: 'Measurement Value',
+      });
     });
   });
 });

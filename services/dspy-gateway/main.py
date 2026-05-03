@@ -19,7 +19,25 @@ from pydantic import BaseModel, Field
 
 import dspy
 
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
+COMBINED_CA_BUNDLE_PATH = Path("/tmp/spc-combined-ca-bundle.pem")
+
+
+def resolve_env_path() -> Path:
+    override = os.getenv("SPC_ENV_FILE")
+    if override:
+        return Path(override).expanduser().resolve()
+
+    current_file = Path(__file__).resolve()
+    for parent in current_file.parents:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            return candidate
+
+    return current_file.parent / ".env"
+
+
+ENV_PATH = resolve_env_path()
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 MANAGED_ENV_KEYS = (
@@ -63,6 +81,9 @@ KNOWN_PROVIDER_PREFIXES = (
 
 
 def sync_managed_env_from_root() -> None:
+    if not ENV_PATH.is_file():
+        return
+
     values = dotenv_values(ENV_PATH)
     for key in MANAGED_ENV_KEYS:
         value = values.get(key)
@@ -72,7 +93,41 @@ def sync_managed_env_from_root() -> None:
         os.environ[key] = str(value)
 
 
+def configure_combined_ca_bundle() -> None:
+    ca_bundle = None
+    for key in ("REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"):
+        value = os.getenv(key)
+        if value and value.strip():
+            ca_bundle = value.strip()
+            break
+    if not ca_bundle:
+        return
+
+    custom_bundle_path = Path(ca_bundle)
+    if custom_bundle_path == COMBINED_CA_BUNDLE_PATH:
+        return
+
+    if not custom_bundle_path.is_file():
+        return
+
+    try:
+        import certifi
+
+        certifi_path = Path(certifi.where())
+        combined_bytes = certifi_path.read_bytes() + b"\n" + custom_bundle_path.read_bytes()
+        if not COMBINED_CA_BUNDLE_PATH.is_file() or COMBINED_CA_BUNDLE_PATH.read_bytes() != combined_bytes:
+            COMBINED_CA_BUNDLE_PATH.write_bytes(combined_bytes)
+    except Exception:
+        return
+
+    combined_value = str(COMBINED_CA_BUNDLE_PATH)
+    os.environ["REQUESTS_CA_BUNDLE"] = combined_value
+    os.environ["SSL_CERT_FILE"] = combined_value
+    os.environ["CURL_CA_BUNDLE"] = combined_value
+
+
 sync_managed_env_from_root()
+configure_combined_ca_bundle()
 
 
 def env_first(*keys: str) -> str | None:
@@ -127,6 +182,263 @@ class AgentRecommendationEnvelope(BaseModel):
     recommendation: AgentRecommendationModel = Field(default_factory=AgentRecommendationModel)
 
 
+class AgentRecommendationHarness:
+    @staticmethod
+    def _clean_optional_text(value: object | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        trimmed = value.strip()
+        return trimmed or None
+
+    @staticmethod
+    def _clamp_sample_size(value: object | None) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return max(2, min(25, int(round(value))))
+        if isinstance(value, str):
+            match = re.search(r"\d+", value)
+            if match:
+                return max(2, min(25, int(match.group(0))))
+        return None
+
+    @staticmethod
+    def _find_matching_brace_end(content: str, start: int) -> int | None:
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(content)):
+            char = content[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+        return None
+
+    @classmethod
+    def _extract_json_objects(cls, content: str) -> list[dict[str, object]]:
+        candidates: list[str] = []
+        for match in re.finditer(r"```json\s*([\s\S]*?)```", content, flags=re.IGNORECASE):
+            payload = match.group(1).strip()
+            if payload:
+                candidates.append(payload)
+
+        for match in re.finditer(r"\{\s*\"recommendation\"\s*:", content):
+            end = cls._find_matching_brace_end(content, match.start())
+            if end is not None:
+                candidates.append(content[match.start():end])
+
+        parsed_candidates: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                parsed_candidates.append(parsed)
+
+        return parsed_candidates
+
+    @classmethod
+    def strip_structured_blocks(cls, content: str) -> str:
+        stripped = re.sub(r"```json\s*[\s\S]*?```", "", content, flags=re.IGNORECASE)
+        spans: list[tuple[int, int]] = []
+        for match in re.finditer(r"\{\s*\"recommendation\"\s*:", stripped):
+            end = cls._find_matching_brace_end(stripped, match.start())
+            if end is not None:
+                spans.append((match.start(), end))
+
+        for start, end in reversed(spans):
+            stripped = stripped[:start] + stripped[end:]
+
+        stripped = re.sub(r"\n?\s*(?:json\s*)?\{[\s\S]*\"recommendation\"[\s\S]*$", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"(?im)^\s*json\s*$", "", stripped)
+        return stripped.strip()
+
+    @classmethod
+    def _normalize_from_data(cls, data: dict[str, object]) -> AgentRecommendationModel:
+        recommendation_raw = data.get("recommendation") if isinstance(data.get("recommendation"), dict) else {}
+        recommendation_data = dict(recommendation_raw) if isinstance(recommendation_raw, dict) else {}
+
+        y_columns_raw = recommendation_data.get("yColumns")
+        if not isinstance(y_columns_raw, list):
+            y_columns_raw = []
+        y_columns: list[str] = []
+        for value in y_columns_raw:
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if trimmed and trimmed not in y_columns:
+                    y_columns.append(trimmed)
+
+        y_column_legacy = cls._clean_optional_text(recommendation_data.get("yColumn"))
+        if not y_columns and y_column_legacy:
+            y_columns = [y_column_legacy]
+
+        chart_type_raw = cls._clean_optional_text(recommendation_data.get("chartType"))
+        chart_type = chart_type_raw if chart_type_raw in AGENT_CHART_TYPES else None
+        sample_size = cls._clamp_sample_size(recommendation_data.get("sampleSize"))
+        x_axis_value = recommendation_data.get("xAxisColumn")
+        x_axis_column = cls._clean_optional_text(x_axis_value)
+        chart_label = cls._clean_optional_text(recommendation_data.get("chartLabel"))
+        z_axis_label = cls._clean_optional_text(recommendation_data.get("zAxisLabel") or recommendation_data.get("xAxisLabel"))
+        y_axis_label = cls._clean_optional_text(recommendation_data.get("yAxisLabel"))
+        reason = cls._clean_optional_text(recommendation_data.get("reason")) or ""
+
+        return AgentRecommendationModel(
+            chartType=chart_type,  # type: ignore[arg-type]
+            yColumns=y_columns,
+            yColumn=y_columns[0] if y_columns else y_column_legacy,
+            xAxisColumn=x_axis_column,
+            sampleSize=sample_size,
+            chartLabel=chart_label,
+            zAxisLabel=z_axis_label,
+            yAxisLabel=y_axis_label,
+            reason=reason,
+        )
+
+    @staticmethod
+    def _score(model: AgentRecommendationModel) -> int:
+        score = 0
+        if model.chartType:
+            score += 4
+        score += min(len(model.yColumns), 8) * 3
+        if model.xAxisColumn is not None:
+            score += 1
+        if model.sampleSize:
+            score += 2
+        if model.chartLabel:
+            score += 1
+        if model.zAxisLabel:
+            score += 1
+        if model.yAxisLabel:
+            score += 1
+        if model.reason:
+            score += 1
+        return score
+
+    @staticmethod
+    def _recover_chart_type(content: str) -> Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"] | None:
+        lowered = content.lower()
+        chart_patterns: list[tuple[str, Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"]]] = [
+            (r"\bx\s*[- ]?\s*bar\s*s\b|\bxbar\s*s\b|\bx-bar\s*s\b", "xBarS"),
+            (r"\bx\s*[- ]?\s*bar\s*r\b|\bxbar\s*r\b|\bx-bar\s*r\b", "xBarR"),
+            (r"\bi\s*[- ]?\s*mr\b|\bindividual\b|\bi chart\b", "individual"),
+            (r"\bp\s*chart\b|\bproportion\b", "pChart"),
+            (r"\bnp\s*chart\b", "npChart"),
+            (r"\bewma\b", "ewma"),
+            (r"\bhistogram\b", "histogram"),
+            (r"\bscatter\s*plot\b", "scatterPlot"),
+        ]
+        for pattern, chart_type in chart_patterns:
+            if re.search(pattern, lowered):
+                return chart_type
+        return None
+
+    @staticmethod
+    def _expand_column_range(prefix: str, start: str, end: str) -> list[str]:
+        start_number = int(start)
+        end_number = int(end)
+        if end_number < start_number or end_number - start_number > 50:
+            return []
+        return [f"{prefix}{number}" for number in range(start_number, end_number + 1)]
+
+    @classmethod
+    def _recover_y_columns(cls, content: str) -> list[str]:
+        columns: list[str] = []
+
+        range_patterns = [
+            r"\b([A-Za-z][A-Za-z0-9]*_)(\d+)\s*(?:through|to|-|–|—)\s*(?:[A-Za-z][A-Za-z0-9]*_)?(\d+)\b",
+            r"\b([A-Za-z][A-Za-z0-9]*)(\d+)\s*(?:through|to|-|–|—)\s*(?:[A-Za-z][A-Za-z0-9]*)?(\d+)\b",
+        ]
+        for pattern in range_patterns:
+            for match in re.finditer(pattern, content, flags=re.IGNORECASE):
+                for column in cls._expand_column_range(match.group(1), match.group(2), match.group(3)):
+                    if column not in columns:
+                        columns.append(column)
+
+        for match in re.finditer(r"\b[A-Za-z][A-Za-z0-9]*_\d+\b", content):
+            column = match.group(0)
+            if column not in columns:
+                columns.append(column)
+
+        return columns
+
+    @classmethod
+    def _recover_label(cls, content: str, names: tuple[str, ...]) -> str | None:
+        joined = "|".join(re.escape(name) for name in names)
+        pattern = rf"[\"']?(?:{joined})[\"']?\s*[:=]\s*[\"']?([^\"'\n\r]+)"
+        match = re.search(pattern, content, flags=re.IGNORECASE)
+        if not match:
+            return None
+        value = re.split(r"\s{2,}|[,;]|\.\s", match.group(1).strip(), maxsplit=1)[0].strip()
+        return value or None
+
+    @classmethod
+    def _recover_from_narrative(cls, content: str) -> AgentRecommendationModel:
+        chart_type = cls._recover_chart_type(content)
+        y_columns = cls._recover_y_columns(content)
+        sample_size = None
+
+        sample_match = re.search(r"\b(?:sample|subgroup)\s*size\s*(?:of|=|:)?\s*(\d+)\b", content, flags=re.IGNORECASE)
+        if sample_match:
+            sample_size = cls._clamp_sample_size(sample_match.group(1))
+        if sample_size is None and y_columns and chart_type in {"xBarS", "xBarR"}:
+            sample_size = len(y_columns)
+
+        chart_label = cls._recover_label(content, ("chartLabel", "chart label", "chart title"))
+        z_axis_label = cls._recover_label(content, ("zAxisLabel", "xAxisLabel", "z axis label", "x axis label"))
+        y_axis_label = cls._recover_label(content, ("yAxisLabel", "y axis label"))
+
+        reason = ""
+        reason_match = re.search(r"\breason\s*[:=]\s*([\s\S]+)$", content, flags=re.IGNORECASE)
+        if reason_match:
+            reason = re.sub(r"```json\s*[\s\S]*?```", "", reason_match.group(1), flags=re.IGNORECASE).strip()
+            reason = reason.splitlines()[0].strip()
+        if not reason and chart_type:
+            bullets = [line.strip(" -\t") for line in content.splitlines() if line.strip().startswith(("-", "*"))]
+            reason = bullets[0] if bullets else ""
+
+        return AgentRecommendationModel(
+            chartType=chart_type,
+            yColumns=y_columns,
+            yColumn=y_columns[0] if y_columns else None,
+            xAxisColumn=None,
+            sampleSize=sample_size,
+            chartLabel=chart_label,
+            zAxisLabel=z_axis_label,
+            yAxisLabel=y_axis_label,
+            reason=reason,
+        )
+
+    @classmethod
+    def build_envelope(cls, content: str) -> AgentRecommendationEnvelope:
+        models = [cls._normalize_from_data(candidate) for candidate in cls._extract_json_objects(content)]
+        models.append(cls._recover_from_narrative(content))
+        best = max(models, key=cls._score, default=AgentRecommendationModel())
+
+        if best.sampleSize is None and best.chartType in {"xBarS", "xBarR"} and len(best.yColumns) > 1:
+            best.sampleSize = len(best.yColumns)
+
+        return AgentRecommendationEnvelope(recommendation=best)
+
+
 class SPCConciseAdvice(dspy.Signature):
     """Provide concise SPC chart guidance with high consistency.
 
@@ -161,30 +473,71 @@ class DSPyGateway:
         return f"{parsed.scheme}://{parsed.netloc}"
 
     @staticmethod
-    def _resolve_litellm_target(model_name: str, api_base: str | None) -> tuple[str, str | None]:
+    def _fallback_api_base() -> str | None:
+        fallback = env_first("VITE_AI_API_URL")
+        if not fallback:
+            return None
+
+        parsed = urlparse(fallback)
+        if parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            return None
+
+        return fallback
+
+    @staticmethod
+    def _effective_api_base() -> str | None:
+        return env_first("AI_API_BASE", "DSPY_API_BASE") or DSPyGateway._fallback_api_base()
+
+    @staticmethod
+    def _is_google_generative_api_base(api_base: str | None) -> bool:
+        if not api_base:
+            return False
+        parsed = urlparse(api_base)
+        return parsed.hostname == "generativelanguage.googleapis.com"
+
+    @staticmethod
+    def _normalize_api_base_for_provider(api_base: str | None, custom_llm_provider: str | None) -> str | None:
+        if not api_base:
+            return None
+
+        parsed = urlparse(api_base)
+        if custom_llm_provider == "gemini" and parsed.hostname == "generativelanguage.googleapis.com":
+            return None
+
+        return api_base
+
+    @staticmethod
+    def _gemini_model_name(model_name: str) -> str:
+        return model_name if model_name.lower().startswith("gemini/") else f"gemini/{model_name}"
+
+    @staticmethod
+    def _resolve_litellm_target(model_name: str, api_base: str | None) -> tuple[str, str | None, str | None]:
         normalized = model_name.strip()
         if not normalized:
-            return normalized, None
+            return normalized, None, api_base
 
         lowered = normalized.lower()
         if lowered.startswith(KNOWN_PROVIDER_PREFIXES):
-            return normalized, None
+            provider_from_prefix = lowered.split("/", 1)[0]
+            return normalized, None, DSPyGateway._normalize_api_base_for_provider(api_base, provider_from_prefix)
 
         provider = env_first("AI_PROVIDER")
         if provider:
-            return normalized, provider.strip().lower()
+            custom_provider = provider.strip().lower()
+            if custom_provider == "gemini":
+                return DSPyGateway._gemini_model_name(normalized), None, DSPyGateway._normalize_api_base_for_provider(api_base, custom_provider)
+            return normalized, custom_provider, DSPyGateway._normalize_api_base_for_provider(api_base, custom_provider)
 
-        # For custom OpenAI-compatible endpoints (vLLM, llama.cpp server, etc.),
-        # require explicit provider when model id does not include it.
+        if lowered.startswith("gemini-") or DSPyGateway._is_google_generative_api_base(api_base):
+            return DSPyGateway._gemini_model_name(normalized), None, DSPyGateway._normalize_api_base_for_provider(api_base, "gemini")
+
+        # Most self-hosted or gateway endpoints exposed via a custom base URL are
+        # OpenAI-compatible, so default to LiteLLM's openai provider when a
+        # provider-prefixed model name is not supplied.
         if api_base:
-            raise RuntimeError(
-                "Missing AI_PROVIDER for AI_API_BASE with unprefixed AI_MODEL. "
-                "If the served model ID does NOT contain the provider name "
-                "(e.g: \"openai/<MODEL_ID>\") add the provider name in "
-                "\"AI_PROVIDER\"; otherwise leave AI_PROVIDER empty."
-            )
+            return normalized, "openai", api_base
 
-        return normalized, None
+        return normalized, None, api_base
 
     def _reload_env_if_changed(self) -> None:
         try:
@@ -197,6 +550,7 @@ class DSPyGateway:
 
         load_dotenv(dotenv_path=ENV_PATH, override=True)
         sync_managed_env_from_root()
+        configure_combined_ca_bundle()
         self._env_mtime = mtime
         self._predictor = None
         self._active_config = None
@@ -208,8 +562,8 @@ class DSPyGateway:
 
         api_key = env_first("AI_API_KEY", "DSPY_API_KEY", "OPENAI_API_KEY", "VITE_AI_API_KEY")
         model_name = env_first("AI_MODEL", "VITE_AI_MODEL")
-        api_base = env_first("AI_API_BASE", "DSPY_API_BASE")
-        litellm_model_name, custom_llm_provider = self._resolve_litellm_target(model_name or "", api_base)
+        api_base = env_first("AI_API_BASE", "DSPY_API_BASE") or self._fallback_api_base()
+        litellm_model_name, custom_llm_provider, api_base = self._resolve_litellm_target(model_name or "", api_base)
         temperature = float(os.getenv("DSPY_TEMPERATURE", "0"))
         max_tokens = int(os.getenv("DSPY_MAX_TOKENS", "220"))
         timeout_seconds = float(os.getenv("DSPY_TIMEOUT_SECONDS", "20"))
@@ -277,83 +631,13 @@ class DSPyGateway:
 
         return False
 
-    @staticmethod
-    def _extract_json_fence(content: str) -> dict[str, object] | None:
-        match = re.search(r"```json\s*([\s\S]*?)```", content, flags=re.IGNORECASE)
-        if not match:
-            return None
-
-        payload_text = match.group(1).strip()
-        if not payload_text:
-            return None
-
-        try:
-            parsed = json.loads(payload_text)
-        except Exception:
-            return None
-
-        if not isinstance(parsed, dict):
-            return None
-
-        return parsed
-
-    @staticmethod
-    def _clean_optional_text(value: object | None) -> str | None:
-        if not isinstance(value, str):
-            return None
-        trimmed = value.strip()
-        return trimmed or None
-
     def _build_agent_envelope(self, content: str) -> AgentRecommendationEnvelope:
-        parsed = self._extract_json_fence(content) or {}
-        recommendation_raw = parsed.get("recommendation") if isinstance(parsed.get("recommendation"), dict) else {}
-        recommendation_data = dict(recommendation_raw) if isinstance(recommendation_raw, dict) else {}
-
-        y_columns_raw = recommendation_data.get("yColumns")
-        if not isinstance(y_columns_raw, list):
-            y_columns_raw = []
-        y_columns = []
-        for value in y_columns_raw:
-            if isinstance(value, str):
-                trimmed = value.strip()
-                if trimmed and trimmed not in y_columns:
-                    y_columns.append(trimmed)
-
-        y_column_legacy = self._clean_optional_text(recommendation_data.get("yColumn"))
-        if not y_columns and y_column_legacy:
-            y_columns = [y_column_legacy]
-
-        chart_type_raw = self._clean_optional_text(recommendation_data.get("chartType"))
-        chart_type = chart_type_raw if chart_type_raw in AGENT_CHART_TYPES else None
-
-        sample_size_raw = recommendation_data.get("sampleSize")
-        sample_size = None
-        if isinstance(sample_size_raw, (int, float)):
-            sample_size = max(2, min(25, int(round(sample_size_raw))))
-
-        x_axis_column = self._clean_optional_text(recommendation_data.get("xAxisColumn"))
-        chart_label = self._clean_optional_text(recommendation_data.get("chartLabel"))
-        z_axis_label = self._clean_optional_text(recommendation_data.get("zAxisLabel") or recommendation_data.get("xAxisLabel"))
-        y_axis_label = self._clean_optional_text(recommendation_data.get("yAxisLabel"))
-        reason = self._clean_optional_text(recommendation_data.get("reason")) or ""
-
-        model = AgentRecommendationModel(
-            chartType=chart_type,
-            yColumns=y_columns,
-            yColumn=y_columns[0] if y_columns else y_column_legacy,
-            xAxisColumn=x_axis_column,
-            sampleSize=sample_size,
-            chartLabel=chart_label,
-            zAxisLabel=z_axis_label,
-            yAxisLabel=y_axis_label,
-            reason=reason,
-        )
-        return AgentRecommendationEnvelope(recommendation=model)
+        return AgentRecommendationHarness.build_envelope(content)
 
     def _ensure_agent_mode_response(self, answer: str) -> str:
         envelope = self._build_agent_envelope(answer)
         json_block = json.dumps(envelope.model_dump(), ensure_ascii=False)
-        narrative = re.sub(r"```json\s*[\s\S]*?```", "", answer, flags=re.IGNORECASE).strip()
+        narrative = AgentRecommendationHarness.strip_structured_blocks(answer)
         if not narrative:
             narrative = "- Applied agent recommendation to UI settings."
         return f"{narrative}\n\n```json\n{json_block}\n```"
@@ -417,7 +701,17 @@ def health_ready() -> dict[str, object]:
         return {"ready": False, "reason": "Missing AI_MODEL", "model_source": "AI_MODEL"}
     if not has_api_key:
         return {"ready": False, "reason": "Missing AI_API_KEY", "model_source": "AI_MODEL"}
-    if api_base.strip() and not model_name.strip().lower().startswith(KNOWN_PROVIDER_PREFIXES) and not provider.strip():
+    model_lower = model_name.strip().lower()
+    is_inferable_gemini = (
+        model_lower.startswith("gemini-")
+        or DSPyGateway._is_google_generative_api_base(api_base)
+    )
+    if (
+        api_base.strip()
+        and not model_lower.startswith(KNOWN_PROVIDER_PREFIXES)
+        and not provider.strip()
+        and not is_inferable_gemini
+    ):
         return {"ready": False, "reason": "Missing AI_PROVIDER for AI_API_BASE with unprefixed AI_MODEL", "model_source": "AI_MODEL"}
     if not api_base.strip():
         return {"ready": True, "model": model_name, "api_base": "(provider default)", "model_source": "AI_MODEL"}
@@ -468,6 +762,24 @@ def chat_completions(
         detail = str(exc) or "DSPy inference failed"
         if "Missing AI_API_KEY" in detail or "Missing AI_MODEL" in detail or "Missing AI_PROVIDER" in detail:
             raise HTTPException(status_code=503, detail=detail) from exc
+        rate_limit_markers = (
+            "RateLimitError",
+            "rate limit",
+            "429",
+            "Too Many Requests",
+        )
+        if any(marker.lower() in detail.lower() for marker in rate_limit_markers):
+            safe_base = gateway._safe_api_base(gateway._effective_api_base() or gateway._api_base)
+            model_name = env_first("AI_MODEL", "VITE_AI_MODEL") or gateway._model_name or "unknown"
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "DSPy upstream provider rate limited this request. "
+                    f"model={model_name}, api_base={safe_base}. "
+                    "If you are using a free OpenRouter model, wait and retry, or switch to a different model. "
+                    f"Original error: {detail}"
+                ),
+            ) from exc
         connectivity_markers = (
             "Connection error",
             "ConnectError",
@@ -478,14 +790,14 @@ def chat_completions(
             "Connection refused",
         )
         if any(marker in detail for marker in connectivity_markers):
-            safe_base = gateway._safe_api_base(env_first("AI_API_BASE", "DSPY_API_BASE") or gateway._api_base)
+            safe_base = gateway._safe_api_base(gateway._effective_api_base() or gateway._api_base)
             model_name = env_first("AI_MODEL", "VITE_AI_MODEL") or gateway._model_name or "unknown"
             raise HTTPException(
                 status_code=503,
                 detail=(
                     "DSPy upstream connection failed. "
                     f"model={model_name}, api_base={safe_base}. "
-                    "Verify AI_API_BASE points to your reachable self-hosted endpoint. "
+                    "Verify the upstream provider base URL is reachable and matches the configured model/provider. "
                     f"Original error: {detail}"
                 ),
             ) from exc

@@ -44,19 +44,22 @@ const Dashboard: React.FC = () => {
       )}
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 flex flex-col gap-6">
           <div className="bg-white rounded-lg shadow-md p-4">
             <FileUploadPanel />
           </div>
-        </div>
-
-        <div className="lg:col-span-4">
           <div className="bg-white rounded-lg shadow-md p-4">
             <ControlPanel />
           </div>
         </div>
 
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          {isDataLoaded && (
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <h2 className="text-lg font-medium text-gray-800 mb-3">{t('dataPreview.title')}</h2>
+              <DataPreview />
+            </div>
+          )}
           <div className="bg-white rounded-lg shadow-md p-4">
             <RuleViolationsPanel />
           </div>
@@ -64,12 +67,6 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 mt-6">
-        {isDataLoaded && (
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <h2 className="text-lg font-medium text-gray-800 mb-3">{t('dataPreview.title')}</h2>
-            <DataPreview />
-          </div>
-        )}
 
         {processedData && (
           <div className="bg-white rounded-lg shadow-md p-4">

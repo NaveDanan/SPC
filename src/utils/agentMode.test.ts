@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractAgentRecommendationFromMessage,
+  stripAgentRecommendationFromMessage,
   validateAgentRecommendationAgainstHeaders,
 } from './agentMode';
 
@@ -59,5 +60,42 @@ describe('agentMode utilities', () => {
     expect(recommendation?.zAxisLabel).toBe('Batch Date');
     expect(recommendation?.yAxisLabel).toBe('Value');
     expect(recommendation?.chartLabel).toBe('I Chart');
+  });
+
+  it('uses the most actionable recommendation when multiple JSON blocks are present', () => {
+    const message = `- Switch to X-bar S
+
+\`\`\`json
+{"recommendation":{"chartType":null,"yColumns":[],"yColumn":null,"xAxisColumn":null,"sampleSize":null,"chartLabel":null,"zAxisLabel":null,"yAxisLabel":null,"reason":""}}
+\`\`\`
+
+{"recommendation":{"chartType":"xBarS","yColumns":["Sample_1","Sample_2","Sample_3","Sample_4","Sample_5"],"xAxisColumn":null,"sampleSize":5,"chartLabel":"X-bar and S Control Chart","zAxisLabel":"Subgroup Index","yAxisLabel":"Measurement Value","reason":"Use all five samples"}}
+`;
+
+    const recommendation = extractAgentRecommendationFromMessage(message);
+
+    expect(recommendation?.chartType).toBe('xBarS');
+    expect(recommendation?.yColumns).toEqual(['Sample_1', 'Sample_2', 'Sample_3', 'Sample_4', 'Sample_5']);
+    expect(recommendation?.xAxisColumn).toBeNull();
+    expect(recommendation?.sampleSize).toBe(5);
+  });
+
+  it('strips malformed and final recommendation payloads from agent mode display text', () => {
+    const message = `* Switch to X-bar R chart.
+
+{
+  "recommendation": {
+    "chartType": "xBarR",
+    "yColumns": ["Sample_1", "Sample_2"],
+    "reason": "Subgroup
+
+json
+{"recommendation":{"chartType":"xBarR","yColumns":["Sample_1","Sample_2"],"reason":"hidden"}}
+
+\`\`\`json
+{"recommendation":{"chartType":"xBarR","yColumns":["Sample_1","Sample_2"],"sampleSize":2,"reason":"final"}}
+\`\`\``;
+
+    expect(stripAgentRecommendationFromMessage(message, 'fallback')).toBe('* Switch to X-bar R chart.');
   });
 });

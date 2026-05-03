@@ -8,6 +8,16 @@ tmp
 coverage
 *.local
 *.env
+docs
+deploy
+services
+buld.txt
+debug-test.js
+README.md
+SETUP.md
+setup.ps1
+setup.sh
+test-constants.ts
 
 # Python
 __pycache__
@@ -15,7 +25,9 @@ __pycache__
 *.pyo
 *.pyd
 .venv
+**/.venv
 venv
+**/venv
 env
 ENV
 .pytest_cache

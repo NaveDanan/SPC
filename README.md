@@ -105,10 +105,22 @@ The gateway exposes an OpenAI-compatible endpoint (`/v1/chat/completions`) so th
 ## Docker
 
 - Build image: `docker build -t spc-analysis-tool .`
-- Run container: `docker run --rm -p 8080:80 spc-analysis-tool`
+- Run container: `docker run --rm -p 8080:8080 spc-analysis-tool`
 - Open: http://localhost:8080
 
-The image is a multi‑stage build (Node for build → Nginx runtime) and serves the production bundle.
+To run the SPA and the DSPy gateway together for local development:
+
+```bash
+cp .env.example .env
+# Set AI_API_KEY and AI_MODEL in .env
+docker compose up --build
+```
+
+The SPA is served on `http://localhost:8080` and the gateway on `http://localhost:8001`.
+Compose mounts `deploy/docker/runtime-config.compose.js` into the frontend container so the browser calls the local gateway automatically.
+If your Docker environment needs custom Python package index or TLS settings for the gateway image build, set `DSPY_PIP_INDEX_URL`, `DSPY_PIP_EXTRA_INDEX_URL`, `DSPY_PIP_TRUSTED_HOST`, or `DSPY_PIP_CERT` in `.env` before running Compose.
+
+The image is a multi‑stage build (Node for build → lightweight Node static runtime) and serves the production bundle.
 
 ## Kubernetes (Helm)
 

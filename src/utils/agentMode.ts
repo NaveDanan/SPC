@@ -22,15 +22,79 @@ const normalizeOptionalLabel = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-export const extractAgentRecommendationFromMessage = (content: string): AgentRecommendation | null => {
-  const jsonFenceMatch = content.match(/```json\s*([\s\S]*?)```/i);
-  if (!jsonFenceMatch?.[1]) {
-    return null;
+const findMatchingBraceEnd = (content: string, start: number): number | null => {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return index + 1;
+      }
+    }
   }
 
+  return null;
+};
+
+const extractJsonCandidates = (content: string): unknown[] => {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of content.matchAll(/```json\s*([\s\S]*?)```/gi)) {
+    const candidate = match[1]?.trim();
+    if (candidate) {
+      candidates.push(candidate);
+    }
+  }
+
+  for (const match of content.matchAll(/\{\s*"recommendation"\s*:/g)) {
+    const end = findMatchingBraceEnd(content, match.index ?? 0);
+    if (end !== null) {
+      candidates.push(content.slice(match.index, end));
+    }
+  }
+
+  return candidates.flatMap((candidate) => {
+    if (seen.has(candidate)) {
+      return [];
+    }
+    seen.add(candidate);
+
+    try {
+      return [JSON.parse(candidate)];
+    } catch {
+      return [];
+    }
+  });
+};
+
+const normalizeRecommendationPayload = (parsed: unknown): AgentRecommendation | null => {
   try {
-    const parsed = JSON.parse(jsonFenceMatch[1]);
-    const recommendation = parsed?.recommendation;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    const payload = parsed as { recommendation?: unknown };
+    const recommendation = payload.recommendation;
     if (!recommendation || typeof recommendation !== 'object') {
       return null;
     }
@@ -106,6 +170,57 @@ export const extractAgentRecommendationFromMessage = (content: string): AgentRec
   } catch {
     return null;
   }
+};
+
+const scoreRecommendation = (recommendation: AgentRecommendation): number => {
+  let score = 0;
+  if (recommendation.chartType) score += 4;
+  score += Math.min(recommendation.yColumns.length, 8) * 3;
+  if (recommendation.xAxisColumn !== undefined) score += 1;
+  if (recommendation.sampleSize !== undefined) score += 2;
+  if (recommendation.chartLabel) score += 1;
+  if (recommendation.zAxisLabel) score += 1;
+  if (recommendation.yAxisLabel) score += 1;
+  if (recommendation.reason) score += 1;
+  return score;
+};
+
+export const extractAgentRecommendationFromMessage = (content: string): AgentRecommendation | null => {
+  const recommendations = extractJsonCandidates(content)
+    .map(normalizeRecommendationPayload)
+    .filter((recommendation): recommendation is AgentRecommendation => recommendation !== null);
+
+  if (recommendations.length === 0) {
+    return null;
+  }
+
+  return recommendations.reduce((best, candidate) => (
+    scoreRecommendation(candidate) > scoreRecommendation(best) ? candidate : best
+  ));
+};
+
+export const stripAgentRecommendationFromMessage = (content: string, fallback: string): string => {
+  let stripped = content.replace(/```json\s*[\s\S]*?```/gi, (block) => (
+    /"recommendation"\s*:/.test(block) ? '' : block
+  ));
+
+  const spans: Array<[number, number]> = [];
+  for (const match of stripped.matchAll(/\{\s*"recommendation"\s*:/g)) {
+    const end = findMatchingBraceEnd(stripped, match.index ?? 0);
+    if (end !== null) {
+      spans.push([match.index ?? 0, end]);
+    }
+  }
+
+  for (let index = spans.length - 1; index >= 0; index -= 1) {
+    const [start, end] = spans[index];
+    stripped = `${stripped.slice(0, start)}${stripped.slice(end)}`;
+  }
+
+  stripped = stripped.replace(/\n?\s*(?:json\s*)?\{[\s\S]*"recommendation"[\s\S]*$/i, '');
+  stripped = stripped.replace(/^\s*json\s*$/gim, '');
+
+  return stripped.trim() || fallback;
 };
 
 export const validateAgentRecommendationAgainstHeaders = (

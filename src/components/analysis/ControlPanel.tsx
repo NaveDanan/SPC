@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { ChartType } from '../../types/DataTypes';
@@ -17,8 +17,15 @@ const ControlPanel: React.FC = () => {
     setSelectedColumns,
     xAxisColumn,
     setXAxisColumn,
+    sampleSize,
+    setSampleSize,
   } = useAppContext();
   const { t } = useLanguage();
+  const [customizationOpen, setCustomizationOpen] = useState(false);
+  const isXbarChart = selectedChartType === 'xBarS' || selectedChartType === 'xBarR';
+  const effectiveSampleSize = isXbarChart && selectedColumns.length > 1
+    ? selectedColumns.length
+    : sampleSize;
   
   // Chart type options
   const chartTypes: { value: ChartType; label: string }[] = [
@@ -102,11 +109,55 @@ const ControlPanel: React.FC = () => {
               Selected columns: {selectedColumns.length}
             </p>
           </div>
+
+          {isXbarChart && (
+            <div>
+              <label htmlFor="sample-size" className="block text-sm font-medium text-gray-700 mb-1">
+                {t('fileUpload.sampleSize')}
+              </label>
+              <input
+                id="sample-size"
+                type="number"
+                min={2}
+                max={25}
+                className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                value={effectiveSampleSize}
+                onChange={(event) => {
+                  const nextSize = Number(event.target.value);
+                  if (Number.isFinite(nextSize)) {
+                    setSampleSize(Math.max(2, Math.min(25, Math.round(nextSize))));
+                  }
+                }}
+                disabled={!isDataLoaded || selectedColumns.length > 1}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedColumns.length > 1
+                  ? `Effective subgroup size follows selected Y columns: ${selectedColumns.length}`
+                  : t('fileUpload.sampleSizeHint')}
+              </p>
+            </div>
+          )}
         </div>
       )}
       
       {/* Chart Customization */}
       <div className="space-y-4">
+        <button
+          type="button"
+          className="flex items-center justify-between w-full text-sm font-medium text-gray-700 hover:text-gray-900"
+          onClick={() => setCustomizationOpen(!customizationOpen)}
+        >
+          <span>Chart Customization</span>
+          <svg
+            className={`h-4 w-4 transition-transform ${customizationOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {customizationOpen && (<>
         <div>
           <label htmlFor="chart-title" className="block text-sm font-medium text-gray-700 mb-1">
             {t('controlPanel.chartTitle')}
@@ -227,9 +278,10 @@ const ControlPanel: React.FC = () => {
             </label>
           </div>
         </div>
+        {/* Chart Type Informational Panel */}
+        <ChartTypeInfo />
+        </>)}
       </div>
-    {/* Chart Type Informational Panel */}
-    <ChartTypeInfo />
     </div>
   );
 };
