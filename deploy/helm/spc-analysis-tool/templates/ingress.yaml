@@ -18,6 +18,15 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
+          {{- if $.Values.gateway.enabled }}
+          - path: {{ $.Values.gateway.ingress.apiPath }}
+            pathType: {{ $.Values.gateway.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "spc.gatewayFullname" $ }}
+                port:
+                  number: {{ $.Values.gateway.service.port }}
+          {{- end }}
           {{- range .paths }}
           - path: {{ .path }}
             pathType: {{ .pathType }}

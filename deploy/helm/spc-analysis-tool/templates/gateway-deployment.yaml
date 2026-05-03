@@ -1,0 +1,121 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "spc.gatewayFullname" . }}
+  labels:
+    {{- include "spc.gatewayLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "spc.gatewaySelectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  template:
+    metadata:
+      labels:
+        {{- include "spc.gatewaySelectorLabels" . | nindent 8 }}
+        {{- with .Values.gateway.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if and .Values.gateway.secretEnv.enabled (not .Values.gateway.externalSecret.enabled) }}
+        checksum/secret: {{ include (print $.Template.BasePath "/gateway-secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.gateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "spc.fullname" . }}
+      {{- else if .Values.serviceAccount.name }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.gateway.podSecurityContext | nindent 8 }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.service.port }}
+              protocol: TCP
+          env:
+            - name: AI_MODEL
+              value: {{ default .Values.ai.model .Values.gateway.env.AI_MODEL | quote }}
+            - name: AI_PROVIDER
+              value: {{ .Values.gateway.env.AI_PROVIDER | quote }}
+            - name: AI_API_BASE
+              value: {{ .Values.gateway.env.AI_API_BASE | quote }}
+            - name: DSPY_API_BASE
+              value: {{ .Values.gateway.env.DSPY_API_BASE | quote }}
+            - name: DSPY_TEMPERATURE
+              value: {{ .Values.gateway.env.DSPY_TEMPERATURE | quote }}
+            - name: DSPY_MAX_TOKENS
+              value: {{ .Values.gateway.env.DSPY_MAX_TOKENS | quote }}
+            - name: DSPY_TIMEOUT_SECONDS
+              value: {{ .Values.gateway.env.DSPY_TIMEOUT_SECONDS | quote }}
+            - name: AI_GATEWAY_PORT
+              value: {{ .Values.gateway.service.port | quote }}
+            {{- if .Values.gateway.caBundle.enabled }}
+            - name: REQUESTS_CA_BUNDLE
+              value: {{ .Values.gateway.caBundle.mountPath | quote }}
+            - name: SSL_CERT_FILE
+              value: {{ .Values.gateway.caBundle.mountPath | quote }}
+            {{- end }}
+          {{- if or .Values.gateway.secretEnv.enabled .Values.gateway.externalSecret.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "spc.gatewaySecretName" . }}
+          {{- end }}
+          volumeMounts:
+            - name: gateway-tmp
+              mountPath: /tmp
+            {{- if .Values.gateway.caBundle.enabled }}
+            - name: gateway-ca-bundle
+              mountPath: {{ .Values.gateway.caBundle.mountPath }}
+              subPath: {{ .Values.gateway.caBundle.secretKey }}
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            {{- toYaml .Values.gateway.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.gateway.livenessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.gateway.securityContext | nindent 12 }}
+      volumes:
+        - name: gateway-tmp
+          emptyDir: {}
+        {{- if .Values.gateway.caBundle.enabled }}
+        - name: gateway-ca-bundle
+          secret:
+            secretName: {{ required "gateway.caBundle.existingSecretName is required when gateway.caBundle.enabled=true" .Values.gateway.caBundle.existingSecretName }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+{{- end }}

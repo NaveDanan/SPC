@@ -79,9 +79,82 @@ networkPolicy:
   allowDNS: true
 
 ai:
-  apiUrl: ""
-  apiKey: ""
-  model: ""
+  apiUrl: "" # Leave blank to default to the gateway ingress endpoint when gateway.enabled and ingress.enabled.
+  apiKey: "" # Browser-side bearer token. In gateway mode, this can be a gateway auth key.
+  model: "" # Leave blank to default to gateway.env.AI_MODEL.
+
+gateway:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/your-org/spc-dspy-gateway
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 8001
+  ingress:
+    apiPath: /v1/chat/completions
+    pathType: Prefix
+  env:
+    AI_MODEL: ""
+    AI_PROVIDER: ""
+    AI_API_BASE: ""
+    DSPY_API_BASE: ""
+    DSPY_TEMPERATURE: "0"
+    DSPY_MAX_TOKENS: "220"
+    DSPY_TIMEOUT_SECONDS: "20"
+  secretEnv:
+    enabled: false
+    data: {} # e.g., { AI_API_KEY: "...", AI_GATEWAY_API_KEY: "..." }
+  externalSecret:
+    enabled: false
+    refreshInterval: 1h
+    secretStoreRef:
+      name: default
+      kind: ClusterSecretStore
+    target:
+      name: ""
+    data: []
+  caBundle:
+    enabled: false
+    existingSecretName: ""
+    secretKey: ca.crt
+    mountPath: /app/certs/custom-ca-bundle.pem
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  readinessProbe:
+    httpGet:
+      path: /health/ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 6
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
 
 config:
   enabled: true
@@ -91,9 +164,9 @@ config:
         ENV: "default",
         FEATURES: {},
         AI: {
-          API_URL: {{ .Values.ai.apiUrl | quote }},
+          API_URL: {{ default (ternary .Values.gateway.ingress.apiPath "" (and .Values.gateway.enabled .Values.ingress.enabled)) .Values.ai.apiUrl | quote }},
           API_KEY: {{ .Values.ai.apiKey | quote }},
-          MODEL: {{ .Values.ai.model | quote }},
+          MODEL: {{ default .Values.gateway.env.AI_MODEL .Values.ai.model | quote }},
         },
       };
 
