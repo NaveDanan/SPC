@@ -11,6 +11,11 @@ coverage
 docs
 deploy
 services
+!deploy/docker/
+!deploy/docker/certs/
+!deploy/docker/certs/bluecoat-ca-bundle.pem
+!services/dspy-gateway/
+!services/dspy-gateway/**
 buld.txt
 debug-test.js
 README.md

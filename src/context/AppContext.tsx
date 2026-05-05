@@ -36,6 +36,8 @@ const defaultChartOptions: ChartOptions = {
   title: 'SPC Analysis Chart',
   xAxisLabel: 'Sample',
   yAxisLabel: 'Value',
+  lowerSpecLimit: null,
+  upperSpecLimit: null,
   showControlLimits: true,
   showCenterLine: true,
   showRuleViolations: true,

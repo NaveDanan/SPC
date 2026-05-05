@@ -2,7 +2,7 @@
 # Environment-agnostic defaults; override in values-<env>.yaml or via Kustomize overlays.
 
 image:
-  repository: ghcr.io/your-org/spc-analysis-tool
+  repository: ghcr.io/your-org/spc-web
   tag: "0.1.0" # Immutable tag RECOMMENDED to be replaced with digest in prod (e.g., sha256:...)
   pullPolicy: IfNotPresent
 
@@ -19,17 +19,15 @@ serviceAccount:
   annotations: {}
 
 podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "9113" # if using nginx exporter sidecar
-  prometheus.io/path: "/metrics"
+  {}
 
 podLabels: {}
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 101
-  runAsGroup: 101
-  fsGroup: 101
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
@@ -79,14 +77,18 @@ networkPolicy:
   allowDNS: true
 
 ai:
-  apiUrl: "" # Leave blank to default to the gateway ingress endpoint when gateway.enabled and ingress.enabled.
-  apiKey: "" # Browser-side bearer token. In gateway mode, this can be a gateway auth key.
-  model: "" # Leave blank to default to gateway.env.AI_MODEL.
+  apiUrl: "" # Only used when gateway.enabled=false and the browser talks directly to an AI endpoint.
+  apiKey: "" # Browser-side bearer token. In gateway mode this is only the browser->SPC token, not the upstream provider key.
+  model: "" # Only used when gateway.enabled=false. In gateway mode the browser model is derived from gateway.env.AI_MODEL.
 
 gateway:
-  enabled: false
+  enabled: true
+  # false = use the combined top-level image, which already embeds the DSPy gateway
+  # true = run the gateway as its own Deployment/Service and use gateway.image below
+  separateDeployment: false
   replicaCount: 1
   image:
+    # Only used when gateway.separateDeployment=true
     repository: ghcr.io/your-org/spc-dspy-gateway
     tag: "0.1.0"
     pullPolicy: IfNotPresent
@@ -115,11 +117,6 @@ gateway:
     target:
       name: ""
     data: []
-  caBundle:
-    enabled: false
-    existingSecretName: ""
-    secretKey: ca.crt
-    mountPath: /app/certs/custom-ca-bundle.pem
   resources:
     limits:
       cpu: 500m
@@ -158,17 +155,9 @@ gateway:
 
 config:
   enabled: true
-  data:
-    runtime-config.js: |
-      window.APP_CONFIG = {
-        ENV: "default",
-        FEATURES: {},
-        AI: {
-          API_URL: {{ default (ternary .Values.gateway.ingress.apiPath "" (and .Values.gateway.enabled .Values.ingress.enabled)) .Values.ai.apiUrl | quote }},
-          API_KEY: {{ .Values.ai.apiKey | quote }},
-          MODEL: {{ default .Values.gateway.env.AI_MODEL .Values.ai.model | quote }},
-        },
-      };
+  runtimeEnv: default
+  features: {}
+  data: {}
 
 secretEnv:
   enabled: false
@@ -185,12 +174,12 @@ externalSecret:
     name: spc-secret-env
   data: [] # list of { secretKey: "API_KEY", remoteRef: { key: "path/in/secret/store", property: "API_KEY" } }
 
-nginxExporter:
-  enabled: false
-  image: nginx/nginx-prometheus-exporter:1.3.0
-  port: 9113
-  args:
-    - -nginx.scrape-uri=http://127.0.0.1:80/stub_status
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 2
+  failureThreshold: 60
 
 readinessProbe:
   httpGet:
@@ -226,11 +215,6 @@ nodeSelector: {}
 tolerations: []
 
 priorityClassName: ""
-
-serviceMonitor:
-  enabled: false
-  interval: 30s
-  scrapeTimeout: 10s
 
 rbac:
   create: true

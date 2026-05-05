@@ -72,6 +72,8 @@ export interface ChartOptions {
   title: string;
   xAxisLabel: string;
   yAxisLabel: string;
+  lowerSpecLimit?: number | null;
+  upperSpecLimit?: number | null;
   showControlLimits: boolean;
   showCenterLine: boolean;
   showRuleViolations: boolean;

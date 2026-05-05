@@ -37,6 +37,14 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
 hpa:
   enabled: true
   minReplicas: 3
@@ -61,8 +69,12 @@ ai:
 
 gateway:
   enabled: true
+  # Keep false to use the single combined app image above.
+  # Set true only if you want an independent gateway Deployment and image.
+  separateDeployment: false
   replicaCount: 2
   image:
+    # Only used when gateway.separateDeployment=true
     repository: registry.internal.example.com/spc/dspy-gateway
     tag: "0.1.0"
     pullPolicy: IfNotPresent
@@ -91,11 +103,6 @@ gateway:
     target:
       name: ""
     data: []
-  caBundle:
-    enabled: false
-    existingSecretName: ""
-    secretKey: ca.crt
-    mountPath: /app/certs/custom-ca-bundle.pem
   resources:
     requests:
       cpu: 100m
@@ -134,17 +141,9 @@ gateway:
 
 config:
   enabled: true
-  data:
-    runtime-config.js: |
-      window.APP_CONFIG = {
-        ENV: "prod",
-        FEATURES: {},
-        AI: {
-          API_URL: {{ default (ternary .Values.gateway.ingress.apiPath "" (and .Values.gateway.enabled .Values.ingress.enabled)) .Values.ai.apiUrl | quote }},
-          API_KEY: {{ .Values.ai.apiKey | quote }},
-          MODEL: {{ default .Values.gateway.env.AI_MODEL .Values.ai.model | quote }},
-        },
-      };
+  runtimeEnv: prod
+  features: {}
+  data: {}
 
 secretEnv:
   enabled: false
@@ -159,15 +158,16 @@ externalSecret:
     name: spc-secret-env
   data: []
 
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 2
+  failureThreshold: 60
+
 serviceAccount:
   create: true
   annotations: {}
-
-nginxExporter:
-  enabled: false
-
-serviceMonitor:
-  enabled: false
 
 rbac:
   create: false

@@ -26,6 +26,14 @@ const ControlPanel: React.FC = () => {
   const effectiveSampleSize = isXbarChart && selectedColumns.length > 1
     ? selectedColumns.length
     : sampleSize;
+  const updateSpecLimit = (key: 'lowerSpecLimit' | 'upperSpecLimit', value: string) => {
+    const trimmedValue = value.trim();
+    const numericValue = Number(trimmedValue);
+    setChartOptions({
+      ...chartOptions,
+      [key]: trimmedValue === '' || !Number.isFinite(numericValue) ? null : numericValue,
+    });
+  };
   
   // Chart type options
   const chartTypes: { value: ChartType; label: string }[] = [
@@ -137,6 +145,37 @@ const ControlPanel: React.FC = () => {
               </p>
             </div>
           )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="lower-spec-limit" className="block text-sm font-medium text-gray-700 mb-1">
+                {t('controlPanel.lowerSpecLimit')}
+              </label>
+              <input
+                id="lower-spec-limit"
+                type="number"
+                step="any"
+                className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                value={chartOptions.lowerSpecLimit ?? ''}
+                onChange={(event) => updateSpecLimit('lowerSpecLimit', event.target.value)}
+                disabled={!isDataLoaded}
+              />
+            </div>
+            <div>
+              <label htmlFor="upper-spec-limit" className="block text-sm font-medium text-gray-700 mb-1">
+                {t('controlPanel.upperSpecLimit')}
+              </label>
+              <input
+                id="upper-spec-limit"
+                type="number"
+                step="any"
+                className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                value={chartOptions.upperSpecLimit ?? ''}
+                onChange={(event) => updateSpecLimit('upperSpecLimit', event.target.value)}
+                disabled={!isDataLoaded}
+              />
+            </div>
+          </div>
         </div>
       )}
       

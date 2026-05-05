@@ -11,11 +11,5 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
-    {{- if .Values.nginxExporter.enabled }}
-    - port: {{ .Values.nginxExporter.port }}
-      targetPort: metrics
-      protocol: TCP
-      name: metrics
-    {{- end }}
   selector:
     {{- include "spc.selectorLabels" . | nindent 4 }}

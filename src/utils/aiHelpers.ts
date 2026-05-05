@@ -115,53 +115,21 @@ export const summarizeDatasetForAi = (
 export const buildAssistantSystemPrompt = (language: 'en' | 'he' = 'en', agentMode = false): string => {
   const agentModeInstructionEn = agentMode
     ? `
-Additional Agent Mode output requirement:
-- After your bullet response, include one JSON block fenced with \`\`\`json.
-- JSON schema:
-  {
-    "recommendation": {
-      "chartType": "individual|pChart|npChart|xBarS|xBarR|ewma|histogram|scatterPlot|null",
-      "yColumns": ["string", "..."],
-      "yColumn": "string|null",
-      "xAxisColumn": "string|null",
-      "sampleSize": number|null,
-      "chartLabel": "string|null",
-      "zAxisLabel": "string|null",
-      "yAxisLabel": "string|null",
-      "reason": "short explanation"
-    }
-  }
-- Prefer yColumns for one or multiple Y columns; keep yColumn only for backward compatibility.
-- The JSON must always include all keys above (use null if unknown).
-- zAxisLabel maps to the chart control field used for X-axis label text in the current UI.
-- Use null when unsure.
-- Do not include extra keys.
+Additional Agent Mode tool requirement:
+- You have explicit tools available for reading and updating SPC controls.
+- Use read_controls before changing settings whenever the current state or allowed options matter.
+- Use update_controls to change the UI instead of emitting recommendation JSON.
+- After tool use is complete, provide a short user-facing summary of what changed or what still needs input.
 `
     : '';
 
   const agentModeInstructionHe = agentMode
     ? `
-דרישת פלט נוספת במצב Agent:
-- אחרי התשובה בתבליטים, כלול בלוק JSON יחיד בתוך \`\`\`json.
-- סכימה:
-  {
-    "recommendation": {
-      "chartType": "individual|pChart|npChart|xBarS|xBarR|ewma|histogram|scatterPlot|null",
-      "yColumns": ["string", "..."],
-      "yColumn": "string|null",
-      "xAxisColumn": "string|null",
-      "sampleSize": number|null,
-      "chartLabel": "string|null",
-      "zAxisLabel": "string|null",
-      "yAxisLabel": "string|null",
-      "reason": "short explanation"
-    }
-  }
-- העדף yColumns עבור עמודה אחת או כמה עמודות Y; yColumn נשאר לתאימות לאחור.
-- ה-JSON חייב לכלול תמיד את כל המפתחות לעיל (אם לא ידוע, השתמש ב-null).
-- zAxisLabel ממופה לשדה התווית של ציר X בממשק הנוכחי.
-- כשלא בטוח השתמש ב-null.
-- אל תוסיף מפתחות נוספים.
+דרישת כלים נוספת במצב Agent:
+- יש לך כלים מפורשים לקריאה ולעדכון של בקרות ה-SPC.
+- השתמש ב-read_controls לפני שינוי הגדרות כאשר המצב הנוכחי או האפשרויות הזמינות חשובים.
+- השתמש ב-update_controls כדי לשנות את הממשק במקום להחזיר JSON של המלצה.
+- אחרי השימוש בכלים, החזר סיכום קצר למשתמש על מה השתנה או איזה מידע עדיין חסר.
 `
     : '';
 
@@ -292,15 +260,7 @@ ${summary}
 
 Current selection: ${friendlyName}.
 
-Provide actionable recommendation fields for:
-- chartType
-- yColumns (single or multiple)
-- xAxisColumn (or null for row index)
-- sampleSize
-- chartLabel
-- zAxisLabel (used as X-axis label text in current UI)
-- yAxisLabel
-
-Also include a short reason.
+Use the available tools to inspect current controls when needed and apply the right SPC UI changes.
+After any tool calls, return a short explanation of what you changed and why.
 `;
 };

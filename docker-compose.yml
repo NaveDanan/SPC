@@ -1,13 +1,12 @@
 services:
-  dspy-gateway:
+  spc-web:
     build:
-      context: ./services/dspy-gateway
+      context: .
       dockerfile: Dockerfile
       args:
         PIP_INDEX_URL: ${DSPY_PIP_INDEX_URL:-}
         PIP_EXTRA_INDEX_URL: ${DSPY_PIP_EXTRA_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${DSPY_PIP_TRUSTED_HOST:-}
-        PIP_CERT: ${DSPY_PIP_CERT:-}
     environment:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
@@ -18,38 +17,25 @@ services:
       VITE_AI_API_KEY: ${VITE_AI_API_KEY:-}
       VITE_AI_MODEL: ${VITE_AI_MODEL:-}
       VITE_AI_API_URL: ${VITE_AI_API_URL:-}
-      REQUESTS_CA_BUNDLE: ${REQUESTS_CA_BUNDLE:-}
-      SSL_CERT_FILE: ${SSL_CERT_FILE:-}
       DSPY_TEMPERATURE: ${DSPY_TEMPERATURE:-0}
       DSPY_MAX_TOKENS: ${DSPY_MAX_TOKENS:-220}
       DSPY_TIMEOUT_SECONDS: ${DSPY_TIMEOUT_SECONDS:-20}
-      AI_GATEWAY_PORT: "8001"
+      AI_GATEWAY_PORT: "8080"
       DSPY_GATEWAY_RELOAD: "false"
+      SPC_WEB_DIST_DIR: /app/spc-web-dist
     ports:
-      - "8001:8001"
+      - "8080:8080"
     volumes:
-      - ./deploy/docker/certs/bluecoat-ca-bundle.pem:/app/certs/bluecoat-ca-bundle.pem:ro
+      - ./deploy/docker/runtime-config.compose.js:/app/spc-web-dist/config/runtime-config.js:ro
     healthcheck:
       test:
         [
           "CMD",
-          "python",
+          "/app/.venv/bin/python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).read()",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()",
         ]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 15s
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      dspy-gateway:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./deploy/docker/runtime-config.compose.js:/app/dist/config/runtime-config.js:ro

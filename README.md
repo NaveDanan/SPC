@@ -64,7 +64,7 @@ The app reads `window.APP_CONFIG.AI.*` first, then falls back to `AI_API_URL`, `
 
 Once configured, click the **Ask AI** button in the Data Input panel to open the assistant. It summarises the current dataset (including selected columns, subgroup size, and early statistics), auto-requests an initial recommendation, and stays available for follow-up questions.
 
-### Optional: DSPy Gateway for More Consistent Answers
+### Optional: Embedded DSPy Gateway for More Consistent Answers
 
 This repo includes a lightweight DSPy service at `services/dspy-gateway` that enforces short, structured SPC answers.
 
@@ -72,14 +72,9 @@ This repo includes a lightweight DSPy service at `services/dspy-gateway` that en
 
   ```bash
   cd services/dspy-gateway
-  python -m venv .venv
-  # Windows PowerShell:
-  .venv\Scripts\Activate.ps1
-  # macOS/Linux:
-  # source .venv/bin/activate
-  pip install -r requirements.txt
-  copy .env.example .env  # (use cp on macOS/Linux)
-  python main.py
+  uv sync --frozen
+  copy ..\..\.env.example ..\..\.env  # use cp ../../.env.example ../../.env on macOS/Linux
+  uv run main.py
   ```
 
 2. Set AI variables in root `.env` and point runtime config to env-backed values (`public/config/runtime-config.js` or Helm values):
@@ -104,11 +99,13 @@ The gateway exposes an OpenAI-compatible endpoint (`/v1/chat/completions`) so th
 
 ## Docker
 
-- Build image: `docker build -t spc-analysis-tool .`
-- Run container: `docker run --rm -p 8080:8080 spc-analysis-tool`
+- Build combined image: `docker build -t spc-web .`
+- Run combined container: `docker run --rm -p 8080:8080 spc-web`
 - Open: http://localhost:8080
 
-To run the SPA and the DSPy gateway together for local development:
+The root image now bundles both SPC-web and the DSPy gateway into a single container. The browser calls the embedded gateway on the same origin at `/v1/chat/completions`.
+
+To run SPC-web and the embedded DSPy gateway together for local development:
 
 ```bash
 cp .env.example .env
@@ -116,11 +113,14 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The SPA is served on `http://localhost:8080` and the gateway on `http://localhost:8001`.
-Compose mounts `deploy/docker/runtime-config.compose.js` into the frontend container so the browser calls the local gateway automatically.
-If your Docker environment needs custom Python package index or TLS settings for the gateway image build, set `DSPY_PIP_INDEX_URL`, `DSPY_PIP_EXTRA_INDEX_URL`, `DSPY_PIP_TRUSTED_HOST`, or `DSPY_PIP_CERT` in `.env` before running Compose.
+SPC-web is served on `http://localhost:8080` and the embedded gateway shares the same container and host port.
+Compose mounts `deploy/docker/runtime-config.compose.js` into the combined container so the browser calls the local gateway automatically.
+The combined image already includes the Bluecoat CA bundle from `deploy/docker/certs/bluecoat-ca-bundle.pem`, so local runs and default cluster deployments do not need an extra CA mount or secret.
+If your Docker environment needs custom Python package index settings for the gateway image build, set `DSPY_PIP_INDEX_URL`, `DSPY_PIP_EXTRA_INDEX_URL`, or `DSPY_PIP_TRUSTED_HOST` in `.env` before running Compose.
 
-The image is a multi‑stage build (Node for build → lightweight Node static runtime) and serves the production bundle.
+The image is a multi‑stage build (Node for the SPC-web bundle → Python runtime for the embedded DSPy gateway and static asset serving).
+
+For local Python workflows in this repo, use the existing `services/dspy-gateway` `uv` project rather than creating a separate root virtualenv.
 
 ## Kubernetes (Helm)
 
@@ -139,6 +139,8 @@ helm upgrade --install spc-analysis-tool deploy/helm/spc-analysis-tool \
 
 Tailor `values.yaml` for ingress host, resources, and any config map entries. For hardened clusters, set `securityContext`, `podSecurityContext`, and ingress annotations as needed.
 
+In gateway mode, Helm now generates `/config/runtime-config.js` from the gateway values automatically. Set the upstream endpoint, provider, and model once under `gateway.env`, and set the upstream secret key once under `gateway.secretEnv.data.AI_API_KEY`.
+
 ## Tech Stack
 
 - React 18 + TypeScript + Vite
@@ -154,7 +156,7 @@ Tailor `values.yaml` for ingress host, resources, and any config map entries. Fo
 - Data processing: `src/utils/spcCalculations.ts`, `src/utils/westernElectricRules.ts`, `src/utils/fileUtils.ts`
 - Types: `src/types/`
 - Static assets: `public/`
-- Docker runtime: `Dockerfile`, `deploy/docker/nginx.conf`
+- Docker runtime: `Dockerfile`
 - Kubernetes chart: `deploy/helm/spc-analysis-tool/`
 
 ## Notes

@@ -1,4 +1,4 @@
-{{- if .Values.gateway.enabled }}
+{{- if and .Values.gateway.enabled .Values.gateway.separateDeployment }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,12 +67,6 @@ spec:
               value: {{ .Values.gateway.env.DSPY_TIMEOUT_SECONDS | quote }}
             - name: AI_GATEWAY_PORT
               value: {{ .Values.gateway.service.port | quote }}
-            {{- if .Values.gateway.caBundle.enabled }}
-            - name: REQUESTS_CA_BUNDLE
-              value: {{ .Values.gateway.caBundle.mountPath | quote }}
-            - name: SSL_CERT_FILE
-              value: {{ .Values.gateway.caBundle.mountPath | quote }}
-            {{- end }}
           {{- if or .Values.gateway.secretEnv.enabled .Values.gateway.externalSecret.enabled }}
           envFrom:
             - secretRef:
@@ -81,12 +75,6 @@ spec:
           volumeMounts:
             - name: gateway-tmp
               mountPath: /tmp
-            {{- if .Values.gateway.caBundle.enabled }}
-            - name: gateway-ca-bundle
-              mountPath: {{ .Values.gateway.caBundle.mountPath }}
-              subPath: {{ .Values.gateway.caBundle.secretKey }}
-              readOnly: true
-            {{- end }}
           readinessProbe:
             {{- toYaml .Values.gateway.readinessProbe | nindent 12 }}
           livenessProbe:
@@ -98,11 +86,6 @@ spec:
       volumes:
         - name: gateway-tmp
           emptyDir: {}
-        {{- if .Values.gateway.caBundle.enabled }}
-        - name: gateway-ca-bundle
-          secret:
-            secretName: {{ required "gateway.caBundle.existingSecretName is required when gateway.caBundle.enabled=true" .Values.gateway.caBundle.existingSecretName }}
-        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

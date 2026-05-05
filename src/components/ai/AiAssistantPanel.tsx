@@ -1,4 +1,5 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Send, Sparkles, X, RefreshCcw, Hash, Clock, Copy, Download, Edit3, Check, FileSpreadsheet } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -13,16 +14,27 @@ import type { AiChatAttachment, AiChatMessage, AiWorksheetOption } from '../../t
 import { chartMeta } from '../../types/chartMeta';
 import { MarkdownText } from '../common/MarkdownText';
 import {
-  AgentRecommendation,
-  extractAgentRecommendationFromMessage,
-  stripAgentRecommendationFromMessage,
-  validateAgentRecommendationAgainstHeaders,
-} from '../../utils/agentMode';
+  ChainOfThought,
+  ChainOfThoughtHeader,
+  ChainOfThoughtContent,
+  ChainOfThoughtStep,
+} from '../ai-elements/chain-of-thought';
+import {
+  AGENT_CHART_TYPES,
+  buildAgentTurnRequest,
+  type AgentControlPatch,
+  type AgentControlsSnapshotInput,
+  type AgentTurnResponse,
+} from '../../utils/aiTools';
 import { resolveAiRuntimeConfig } from '../../utils/runtimeConfig';
 
 interface AiAssistantPanelProps {
   onClose: () => void;
 }
+
+const hasOwn = <T extends object>(value: T, key: PropertyKey): boolean => (
+  Object.prototype.hasOwnProperty.call(value, key)
+);
 
 const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
   const {
@@ -56,7 +68,6 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
   const conversationRef = useRef<AiChatMessage[]>([]);
   const lastSummaryRef = useRef<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const parsedAssistantIdsRef = useRef<Set<string>>(new Set());
   const sheetSelectionContextRef = useRef<string | null>(null);
   const agentAutopilotContextRef = useRef<string | null>(null);
   const suppressNextAgentAutopilotRef = useRef(false);
@@ -113,6 +124,130 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     return Math.max(1, Math.ceil(wordCount * 1.35));
   };
 
+  const applyAgentControlPatch = useCallback((patch: AgentControlPatch | null | undefined) => {
+    if (!patch) {
+      return;
+    }
+
+    const headers = rawData?.headers ?? [];
+    const applied: string[] = [];
+    let nextChartType = selectedChartType;
+    let nextSelectedColumns = selectedColumns;
+
+    if (typeof patch.chartType === 'string' && AGENT_CHART_TYPES.includes(patch.chartType)) {
+      nextChartType = patch.chartType;
+      setSelectedChartType(patch.chartType);
+      applied.push(t('ai.agentProposedChart'));
+    }
+
+    if (Array.isArray(patch.yColumns)) {
+      const nextYColumns = Array.from(new Set(patch.yColumns.filter((value): value is string => typeof value === 'string')))
+        .filter((value) => headers.includes(value));
+      if (nextYColumns.length > 0 || patch.yColumns.length === 0) {
+        nextSelectedColumns = nextYColumns;
+        setSelectedColumns(nextYColumns);
+        applied.push(t('ai.agentProposedY'));
+      }
+    }
+
+    if (hasOwn(patch, 'xAxisColumn')) {
+      if (patch.xAxisColumn === null || patch.xAxisColumn === undefined) {
+        setXAxisColumn(null);
+        applied.push(t('ai.agentProposedX'));
+      } else if (typeof patch.xAxisColumn === 'string' && headers.includes(patch.xAxisColumn)) {
+        setXAxisColumn(patch.xAxisColumn);
+        applied.push(t('ai.agentProposedX'));
+      }
+    }
+
+    const shouldUseYColumnsAsSubgroups =
+      (nextChartType === 'xBarS' || nextChartType === 'xBarR') && nextSelectedColumns.length > 1;
+    const nextSampleSize = shouldUseYColumnsAsSubgroups
+      ? nextSelectedColumns.length
+      : patch.sampleSize;
+    if (typeof nextSampleSize === 'number' && Number.isFinite(nextSampleSize)) {
+      setSampleSize(Math.max(2, Math.min(25, Math.round(nextSampleSize))));
+      applied.push(t('ai.agentProposedSample'));
+    }
+
+    const nextChartOptions = { ...chartOptions };
+    let chartOptionsChanged = false;
+    const assignChartOption = <K extends keyof typeof nextChartOptions>(key: K, value: typeof nextChartOptions[K] | undefined, label: string) => {
+      if (value === undefined || value === nextChartOptions[key]) {
+        return;
+      }
+      nextChartOptions[key] = value;
+      chartOptionsChanged = true;
+      applied.push(label);
+    };
+
+    assignChartOption('title', typeof patch.chartLabel === 'string' ? patch.chartLabel : undefined, t('controlPanel.chartTitle'));
+    assignChartOption('xAxisLabel', typeof patch.zAxisLabel === 'string' ? patch.zAxisLabel : undefined, t('controlPanel.xAxisLabel'));
+    assignChartOption('yAxisLabel', typeof patch.yAxisLabel === 'string' ? patch.yAxisLabel : undefined, t('controlPanel.yAxisLabel'));
+    assignChartOption('showControlLimits', typeof patch.showControlLimits === 'boolean' ? patch.showControlLimits : undefined, 'showControlLimits');
+    assignChartOption('showCenterLine', typeof patch.showCenterLine === 'boolean' ? patch.showCenterLine : undefined, 'showCenterLine');
+    assignChartOption('showRuleViolations', typeof patch.showRuleViolations === 'boolean' ? patch.showRuleViolations : undefined, 'showRuleViolations');
+    assignChartOption('showSigma1', typeof patch.showSigma1 === 'boolean' ? patch.showSigma1 : undefined, 'showSigma1');
+    assignChartOption('showSigma2', typeof patch.showSigma2 === 'boolean' ? patch.showSigma2 : undefined, 'showSigma2');
+    assignChartOption('showSigma3', typeof patch.showSigma3 === 'boolean' ? patch.showSigma3 : undefined, 'showSigma3');
+    assignChartOption('colorScheme', typeof patch.colorScheme === 'string' ? patch.colorScheme : undefined, 'colorScheme');
+
+    if (chartOptionsChanged) {
+      setChartOptions(nextChartOptions);
+    }
+
+    setAgentFeedback(
+      applied.length
+        ? `${t('ai.agentApplied')} ${applied.join(', ')}`
+        : t('ai.agentNoChangeDetected'),
+    );
+
+    if (applied.length > 0) {
+      suppressNextAgentAutopilotRef.current = true;
+    }
+  }, [chartOptions, rawData?.headers, selectedChartType, selectedColumns, setChartOptions, setSampleSize, setSelectedChartType, setSelectedColumns, setXAxisColumn, t]);
+
+  const runAgentModeTurn = useCallback(async (
+    conversationForRequest: AiChatMessage[],
+    endpoint: string,
+    apiKey: string,
+    model: string,
+    shouldSendTemperature: boolean,
+  ): Promise<AgentTurnResponse> => {
+    const agentState: AgentControlsSnapshotInput = {
+      rawData,
+      selectedChartType,
+      chartOptions,
+      selectedColumns,
+      xAxisColumn,
+      sampleSize,
+      language,
+      agentModeEnabled: true,
+      selectedAiSheetIndex,
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(buildAgentTurnRequest(agentState, conversationForRequest, {
+        model,
+        systemPrompt,
+        datasetSummary,
+        processedData,
+        ...(shouldSendTemperature ? { temperature: 0.2 } : {}),
+      })),
+    });
+
+    if (!response.ok) {
+      throw new Error(await extractAiErrorMessage(response));
+    }
+
+    return await response.json() as AgentTurnResponse;
+  }, [chartOptions, datasetSummary, language, processedData, rawData, sampleSize, selectedAiSheetIndex, selectedChartType, selectedColumns, systemPrompt, xAxisColumn]);
+
   const extractAiErrorMessage = async (response: Response): Promise<string> => {
     const fallback = `AI service request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`;
 
@@ -160,72 +295,6 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-
-  const stripAgentRecommendationJson = useCallback(
-    (content: string): string => stripAgentRecommendationFromMessage(content, t('ai.agentApplied')),
-    [t],
-  );
-
-  const applyAgentRecommendation = useCallback((recommendation: AgentRecommendation) => {
-    const headers = rawData?.headers ?? [];
-    const validated = validateAgentRecommendationAgainstHeaders(recommendation, headers);
-    const applied: string[] = [];
-    const nextChartType = validated.chartType ?? selectedChartType;
-    const shouldUseYColumnsAsSubgroups =
-      (nextChartType === 'xBarS' || nextChartType === 'xBarR') && validated.yColumns.length > 1;
-
-    if (validated.chartType) {
-      setSelectedChartType(validated.chartType);
-      applied.push(t('ai.agentProposedChart'));
-    }
-
-    if (validated.yColumns.length > 0) {
-      setSelectedColumns(validated.yColumns);
-      applied.push(t('ai.agentProposedY'));
-    }
-
-    if (validated.xAxisColumn !== undefined) {
-      setXAxisColumn(validated.xAxisColumn);
-      applied.push(t('ai.agentProposedX'));
-    }
-
-    const nextSampleSize = shouldUseYColumnsAsSubgroups
-      ? validated.yColumns.length
-      : validated.sampleSize;
-    if (typeof nextSampleSize === 'number') {
-      setSampleSize(nextSampleSize);
-      applied.push(t('ai.agentProposedSample'));
-    }
-
-    if (validated.chartLabel !== undefined || validated.zAxisLabel !== undefined || validated.yAxisLabel !== undefined) {
-      setChartOptions({
-        ...chartOptions,
-        ...(validated.chartLabel !== undefined ? { title: validated.chartLabel } : {}),
-        ...(validated.zAxisLabel !== undefined ? { xAxisLabel: validated.zAxisLabel } : {}),
-        ...(validated.yAxisLabel !== undefined ? { yAxisLabel: validated.yAxisLabel } : {}),
-      });
-
-      if (validated.chartLabel !== undefined) {
-        applied.push(t('controlPanel.chartTitle'));
-      }
-      if (validated.zAxisLabel !== undefined) {
-        applied.push(t('controlPanel.xAxisLabel'));
-      }
-      if (validated.yAxisLabel !== undefined) {
-        applied.push(t('controlPanel.yAxisLabel'));
-      }
-    }
-
-    setAgentFeedback(
-      applied.length
-        ? `${t('ai.agentApplied')} ${applied.join(', ')}`
-        : t('ai.agentNoChangeDetected'),
-    );
-
-    if (applied.length > 0) {
-      suppressNextAgentAutopilotRef.current = true;
-    }
-  }, [chartOptions, rawData?.headers, selectedChartType, setChartOptions, setSampleSize, setSelectedChartType, setSelectedColumns, setXAxisColumn, t]);
 
   const appendWorksheetSelectionMessage = useCallback(() => {
     if (!rawData?.sheets || rawData.sheets.length <= 1) {
@@ -332,11 +401,34 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       const endpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
         ? trimmedUrl
         : `${trimmedUrl}/v1/chat/completions`;
+      const agentEndpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
+        ? trimmedUrl.replace(/\/v1\/chat\/completions$/i, '/v1/agent/turn')
+        : `${trimmedUrl}/v1/agent/turn`;
       const normalizedModel = model.trim().toLowerCase();
       const shouldSendTemperature = !normalizedModel.startsWith('gpt');
 
       try {
         const startTime = Date.now();
+        if (requestAgentMode) {
+          const result = await runAgentModeTurn(conversationForRequest, agentEndpoint, apiKey, model, shouldSendTemperature);
+          applyAgentControlPatch(result.controlPatch);
+          const assistantMessage: AiChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: result.content,
+            createdAt: Date.now(),
+            tokenCount: tokenCountFor(result.content),
+            responseTimeMs: Math.max(0, Date.now() - startTime),
+            parentUserId: userMessage.id,
+            ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+            agentModeRequest: true,
+          };
+          const conversationWithAssistant = [...conversationWithUser, assistantMessage];
+          conversationRef.current = conversationWithAssistant;
+          setMessages(conversationWithAssistant);
+          return;
+        }
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -386,6 +478,12 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
             setMessages([...conversationRef.current]);
           };
 
+          const applyReasoningDelta = (delta: string) => {
+            if (!delta) return;
+            assistantMessage.reasoning = (assistantMessage.reasoning ?? '') + delta;
+            setMessages([...conversationRef.current]);
+          };
+
           const processEvent = (rawEvent: string) => {
             const lines = rawEvent.split('\n');
             for (const line of lines) {
@@ -403,6 +501,11 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
                 const piece: string | undefined = parsed?.choices?.[0]?.delta?.content;
                 if (typeof piece === 'string') {
                   applyDelta(piece);
+                }
+                // vLLM reasoning_content (Gemma 4 thinking mode, DeepSeek R1, etc.)
+                const reasoningPiece: string | undefined = parsed?.choices?.[0]?.delta?.reasoning_content;
+                if (typeof reasoningPiece === 'string') {
+                  applyReasoningDelta(reasoningPiece);
                 }
               } catch {
                 // Non-JSON data line; ignore
@@ -444,6 +547,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           if (!assistantText) {
             throw new Error('The AI service returned an empty response.');
           }
+          const reasoningText: string | undefined = payload?.choices?.[0]?.message?.reasoning_content?.trim();
           const assistantMessage: AiChatMessage = {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
@@ -452,6 +556,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
             tokenCount: tokenCountFor(assistantText),
             responseTimeMs: 0,
             parentUserId: userMessage.id,
+            ...(reasoningText ? { reasoning: reasoningText } : {}),
             agentModeRequest: requestAgentMode,
           };
           assistantMessage.responseTimeMs = Math.max(0, Date.now() - startTime);
@@ -468,7 +573,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         requestInFlightRef.current = false;
       }
     },
-    [agentModeEnabled, appendAssistantMessage, appendWorksheetSelectionMessage, requiresWorksheetSelection, systemPrompt, t],
+    [agentModeEnabled, appendAssistantMessage, appendWorksheetSelectionMessage, applyAgentControlPatch, requiresWorksheetSelection, runAgentModeTurn, systemPrompt, t],
   );
 
   const datasetAttachment = useMemo<AiChatAttachment | undefined>(() => {
@@ -499,6 +604,9 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       const endpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
         ? trimmedUrl
         : `${trimmedUrl}/v1/chat/completions`;
+      const agentEndpoint = /\/v1\/chat\/completions$/i.test(trimmedUrl)
+        ? trimmedUrl.replace(/\/v1\/chat\/completions$/i, '/v1/agent/turn')
+        : `${trimmedUrl}/v1/agent/turn`;
       const normalizedModel = model.trim().toLowerCase();
       const shouldSendTemperature = !normalizedModel.startsWith('gpt');
 
@@ -513,6 +621,17 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       try {
         // Build messages up to and including the parent user message
         const subset = convo.slice(0, userIndex + 1);
+        if (targetAssistant.agentModeRequest) {
+          const result = await runAgentModeTurn(subset, agentEndpoint, apiKey, model, shouldSendTemperature);
+          applyAgentControlPatch(result.controlPatch);
+          targetAssistant.content = result.content;
+          targetAssistant.reasoning = result.reasoning ?? undefined;
+          targetAssistant.tokenCount = tokenCountFor(result.content);
+          targetAssistant.responseTimeMs = Math.max(0, Date.now() - startTime);
+          setMessages([...conversationRef.current]);
+          return;
+        }
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -615,7 +734,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         requestInFlightRef.current = false;
       }
     },
-    [systemPrompt, t],
+    [applyAgentControlPatch, runAgentModeTurn, systemPrompt, t],
   );
 
   const handleRegenerate = (message: AiChatMessage) => {
@@ -788,38 +907,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       setAgentFeedback(null);
       agentAutopilotContextRef.current = null;
       suppressNextAgentAutopilotRef.current = false;
-      return;
     }
-
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role !== 'assistant') {
-        continue;
-      }
-      if (parsedAssistantIdsRef.current.has(message.id)) {
-        continue;
-      }
-      if (isLoading && message.tokenCount === undefined && message.responseTimeMs === undefined) {
-        continue;
-      }
-      if (!message.agentModeRequest) {
-        continue;
-      }
-
-      parsedAssistantIdsRef.current.add(message.id);
-      const recommendation = extractAgentRecommendationFromMessage(message.content);
-      if (!recommendation) {
-        continue;
-      }
-
-      const validated = validateAgentRecommendationAgainstHeaders(recommendation, rawData?.headers ?? []);
-      applyAgentRecommendation(validated);
-      break;
-    }
-  }, [agentModeEnabled, applyAgentRecommendation, isLoading, messages, rawData?.headers]);
-
-  useEffect(() => {
-    parsedAssistantIdsRef.current.clear();
   }, [agentModeEnabled]);
 
   useEffect(() => {
@@ -830,8 +918,11 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     const contextSignature = `${selectedAiSheetIndex ?? -1}::${datasetSummary}`;
 
     if (suppressNextAgentAutopilotRef.current) {
-      suppressNextAgentAutopilotRef.current = false;
-      agentAutopilotContextRef.current = contextSignature;
+      if (agentAutopilotContextRef.current !== contextSignature) {
+        // Data has actually changed – consume the suppress flag and cache the new signature
+        suppressNextAgentAutopilotRef.current = false;
+        agentAutopilotContextRef.current = contextSignature;
+      }
       return;
     }
 
@@ -873,7 +964,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         return false;
       }
 
-      if (agentModeEnabled && message.role === 'user' && message.autoGenerated) {
+      if (agentModeEnabled && message.role === 'user' && message.autoGenerated && message.agentModeRequest) {
         hiddenAutoUserIds.add(message.id);
         return false;
       }
@@ -951,9 +1042,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           }
           const attachmentMeta = attachmentMetaParts.join(' · ');
           const showEdit = !isAssistant && !message.autoGenerated && !hasAttachment;
-          const visibleAssistantContent = isAssistant && agentModeEnabled
-            ? stripAgentRecommendationJson(message.content)
-            : message.content;
+          const visibleAssistantContent = message.content;
           return (
             <div key={message.id} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
               <div className="relative group max-w-[90%]">
@@ -962,6 +1051,18 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
                 >
                   {isAssistant ? (
                     <>
+                      {message.reasoning && (
+                        <ChainOfThought className="mb-3">
+                          <ChainOfThoughtHeader>{t('ai.thinking')}</ChainOfThoughtHeader>
+                          <ChainOfThoughtContent>
+                            <ChainOfThoughtStep label={t('ai.thinking')} status="complete">
+                              <div className="text-xs whitespace-pre-wrap text-gray-600 dark:text-gray-400">
+                                {message.reasoning}
+                              </div>
+                            </ChainOfThoughtStep>
+                          </ChainOfThoughtContent>
+                        </ChainOfThought>
+                      )}
                       <MarkdownText text={visibleAssistantContent} />
                       {hasWorksheetOptions && (
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -1116,7 +1217,32 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
           }}
           disabled={isLoading || !!editingId}
         />
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            type="button"
+            className={`rounded-full transition-colors duration-200 flex items-center gap-1.5 px-2 py-1 border h-8 ${agentModeEnabled ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-400 hover:bg-gray-200 hover:text-gray-600'}`}
+            onClick={() => {
+              setAgentModeEnabled((prev) => !prev);
+              setAgentFeedback(null);
+            }}
+            aria-pressed={agentModeEnabled}
+            title={agentModeEnabled ? t('ai.agentModeOn') : 'Agent mode: Off'}
+          >
+            <Sparkles className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+            <AnimatePresence initial={false}>
+              {agentModeEnabled && (
+                <motion.span
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 'auto', opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.15, ease: 'easeInOut' }}
+                  className="text-[11px] font-medium overflow-hidden whitespace-nowrap flex-shrink-0"
+                >
+                  {t('ai.agentModeOn')}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
           <button
             type="submit"
             className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1128,20 +1254,6 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
               <Send className="h-4 w-4" aria-hidden="true" />
             )}
             <span>{isLoading ? t('ai.sending') : t('ai.send')}</span>
-          </button>
-        </div>
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition ${agentModeEnabled ? 'bg-teal-600 text-white' : 'bg-teal-50 text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100'}`}
-            onClick={() => {
-              setAgentModeEnabled((prev) => !prev);
-              setAgentFeedback(null);
-            }}
-            aria-pressed={agentModeEnabled}
-          >
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{agentModeEnabled ? t('ai.agentModeOn') : t('ai.agentModeOff')}</span>
           </button>
         </div>
         <p className="mt-1 text-right text-[11px] text-teal-700/80">{t('ai.agentHint')}</p>

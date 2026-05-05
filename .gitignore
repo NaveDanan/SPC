@@ -46,3 +46,6 @@ build/
 site/
 *.egg-info/
 .ipynb_checkpoints/
+
+# Local packaged artifacts
+*.tar

@@ -6,8 +6,12 @@ metadata:
   labels:
     {{- include "spc.labels" . | nindent 4 }}
 data:
+  runtime-config.js: |
+{{ include "spc.runtimeConfigJs" . | indent 4 }}
   {{- range $k, $v := .Values.config.data }}
+  {{- if ne $k "runtime-config.js" }}
   {{ $k }}: |
 {{ tpl $v $ | indent 4 }}
+  {{- end }}
   {{- end }}
 {{- end }}

@@ -10,6 +10,7 @@ import EWMAChart from './ChartTypes/EWMAChart';
 import Histogram from './ChartTypes/Histogram';
 import ScatterPlot from './ChartTypes/ScatterPlot';
 import ChartActions from './ChartActions';
+import { calculateCapabilityIndices } from '../../utils/spcCalculations';
 
 const ChartPanel: React.FC = () => {
   const { 
@@ -22,7 +23,7 @@ const ChartPanel: React.FC = () => {
   const { t } = useLanguage();
 
   const formatStat = (value: number, decimals = 3): string => {
-    return Number.isFinite(value) ? value.toFixed(decimals) : '—';
+    return Number.isFinite(value) ? value.toFixed(decimals) : '-';
   };
   
   if (isProcessing) {
@@ -69,16 +70,16 @@ const ChartPanel: React.FC = () => {
   const lcl = processedData.controlLimits.lcl;
   const sigma = processedData.controlLimits.sigma;
 
-  const cplValue = Number.isFinite(sigma) && sigma > 0
-    ? (centerLine - lcl) / (3 * sigma)
-    : Number.NaN;
-  const cpuValue = Number.isFinite(sigma) && sigma > 0
-    ? (ucl - centerLine) / (3 * sigma)
-    : Number.NaN;
-  const cpkValue = Number.isFinite(cplValue) && Number.isFinite(cpuValue)
-    ? Math.min(cplValue, cpuValue)
-    : Number.NaN;
+  const { cp: cpValue, cpl: cplValue, cpu: cpuValue, cpk: cpkValue } = calculateCapabilityIndices(
+    centerLine,
+    sigma,
+    {
+      lowerSpecLimit: chartOptions.lowerSpecLimit,
+      upperSpecLimit: chartOptions.upperSpecLimit,
+    }
+  );
 
+  const cp = formatStat(cpValue, 4);
   const cpl = formatStat(cplValue, 4);
   const cpu = formatStat(cpuValue, 4);
   const cpk = formatStat(cpkValue, 4);
@@ -113,7 +114,11 @@ const ChartPanel: React.FC = () => {
             <p className="text-xs text-purple-700 font-medium">{t('chartPanel.stdDev')}</p>
             <p className="text-lg font-semibold">{formatStat(sigma)}</p>
           </div>
-            <div className="bg-amber-50 rounded-md p-3">
+          <div className="bg-cyan-50 rounded-md p-3">
+            <p className="text-xs text-cyan-700 font-medium">{t('chartPanel.cp')}</p>
+            <p className="text-lg font-semibold">{cp}</p>
+          </div>
+          <div className="bg-amber-50 rounded-md p-3">
             <p className="text-xs text-amber-700 font-medium">{t('chartPanel.cpl')}</p>
             <p className="text-lg font-semibold">{cpl}</p>
           </div>
@@ -121,7 +126,7 @@ const ChartPanel: React.FC = () => {
             <p className="text-xs text-stone-700 font-medium">{t('chartPanel.cpu')}</p>
             <p className="text-lg font-semibold">{cpu}</p>
           </div>
-            <div className="bg-emerald-50 rounded-md p-3">
+          <div className="bg-emerald-50 rounded-md p-3">
             <p className="text-xs text-slate-700 font-medium">{t('chartPanel.cpk')}</p>
             <p className="text-lg font-semibold">{cpk}</p>
           </div>

@@ -1,0 +1,35 @@
+# Overlay for running SPC against a self-hosted vLLM endpoint.
+# Use together with prod-values.yaml, for example:
+#   helm upgrade --install spc deploy/helm/spc-analysis-tool \
+#     -f deploy/helm/spc-analysis-tool/prod-values.yaml \
+#     -f deploy/helm/spc-analysis-tool/prod-values.vllm.yaml
+
+image:
+  repository: registry.internal.example.com/spc/spc-analysis-tool
+  tag: "ai-v2.0.13"
+  pullPolicy: IfNotPresent
+
+gateway:
+  enabled: true
+  separateDeployment: false
+  env:
+    # Required when AI_API_BASE is set and the model name is not provider-prefixed.
+    AI_PROVIDER: "openai"
+    # Include /v1 for OpenAI-compatible vLLM servers.
+    AI_API_BASE: "http://vllm.your-namespace.svc.cluster.local:8000/v1"
+    AI_MODEL: "Qwen/Qwen2.5-7B-Instruct"
+    DSPY_TEMPERATURE: "0"
+    DSPY_MAX_TOKENS: "220"
+    DSPY_TIMEOUT_SECONDS: "20"
+  secretEnv:
+    enabled: true
+    data:
+      # Required by the SPC gateway readiness logic.
+      # If your vLLM server has auth enabled, put the real key here.
+      # If your vLLM server does not require auth, set any non-empty placeholder value.
+      AI_API_KEY: "replace-with-vllm-api-key-or-non-empty-placeholder"
+
+# This chart's NetworkPolicy only supports egress by CIDR.
+# For an in-cluster Service DNS name, disable it unless you add a custom policy.
+networkPolicy:
+  enabled: false

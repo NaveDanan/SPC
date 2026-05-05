@@ -1,4 +1,37 @@
-export type AiMessageRole = 'user' | 'assistant';
+export type AiMessageRole = 'system' | 'user' | 'assistant' | 'tool';
+
+export interface AiToolFunctionCall {
+  name: string;
+  arguments: string;
+}
+
+export interface AiToolCall {
+  id: string;
+  type: 'function';
+  function: AiToolFunctionCall;
+}
+
+export interface AiToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface AiToolMessage {
+  role: 'tool';
+  tool_call_id: string;
+  content: string;
+}
+
+export interface AiCompletionMessagePayload {
+  role: AiMessageRole;
+  content: string;
+  tool_calls?: AiToolCall[];
+  tool_call_id?: string;
+}
 
 export interface AiChatAttachment {
   name: string;
@@ -27,4 +60,8 @@ export interface AiChatMessage {
   parentUserId?: string;
   attachment?: AiChatAttachment;
   worksheetOptions?: AiWorksheetOption[];
+  reasoning?: string;
+  toolCalls?: AiToolCall[];
+  toolCallId?: string;
+  hiddenFromTranscript?: boolean;
 }

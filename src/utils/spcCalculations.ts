@@ -64,6 +64,66 @@ export const calculateStandardDeviation = (data: number[]): number => {
   return jStat.stdev(data, true);
 };
 
+export interface CapabilityIndices {
+  cp: number;
+  cpl: number;
+  cpu: number;
+  cpk: number;
+}
+
+export interface CapabilitySpecLimits {
+  lowerSpecLimit?: number | null;
+  upperSpecLimit?: number | null;
+}
+
+const finiteOrNull = (value: number | null | undefined): number | null => (
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+);
+
+export const calculateCapabilityIndices = (
+  mean: number,
+  sigma: number,
+  specLimits: CapabilitySpecLimits
+): CapabilityIndices => {
+  const empty = {
+    cp: Number.NaN,
+    cpl: Number.NaN,
+    cpu: Number.NaN,
+    cpk: Number.NaN,
+  };
+
+  if (!Number.isFinite(mean) || !Number.isFinite(sigma) || sigma <= 0) {
+    return empty;
+  }
+
+  const lowerSpecLimit = finiteOrNull(specLimits.lowerSpecLimit);
+  const upperSpecLimit = finiteOrNull(specLimits.upperSpecLimit);
+
+  if (
+    lowerSpecLimit !== null &&
+    upperSpecLimit !== null &&
+    upperSpecLimit <= lowerSpecLimit
+  ) {
+    return empty;
+  }
+
+  const cpl = lowerSpecLimit !== null
+    ? (mean - lowerSpecLimit) / (3 * sigma)
+    : Number.NaN;
+  const cpu = upperSpecLimit !== null
+    ? (upperSpecLimit - mean) / (3 * sigma)
+    : Number.NaN;
+  const cp = lowerSpecLimit !== null && upperSpecLimit !== null
+    ? (upperSpecLimit - lowerSpecLimit) / (6 * sigma)
+    : Number.NaN;
+  const cpkCandidates = [cpl, cpu].filter(Number.isFinite);
+  const cpk = cpkCandidates.length > 0
+    ? Math.min(...cpkCandidates)
+    : Number.NaN;
+
+  return { cp, cpl, cpu, cpk };
+};
+
 // Calculate control limits for Individual chart
 export const calculateIndividualControlLimits = (data: number[]): ControlLimits => {
   const mean = calculateMean(data);

@@ -4,7 +4,7 @@ name: spc-analysis-tool
 version: 0.2.0
 # App version (container image version). Keep distinct for upgrade logic.
 appVersion: "0.1.0"
-description: Statistical Process Control (SPC) Analysis frontend with optional DSPy AI gateway
+description: Statistical Process Control (SPC) web application with embedded DSPy AI gateway
 home: https://github.com/your-org/spc-analysis-tool
 sources:
   - https://github.com/your-org/spc-analysis-tool

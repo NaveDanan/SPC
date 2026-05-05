@@ -24,6 +24,9 @@ spec:
         {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if and .Values.gateway.secretEnv.enabled (not .Values.gateway.externalSecret.enabled) }}
+        checksum/gateway-secret: {{ include (print $.Template.BasePath "/gateway-secret.yaml") . | sha256sum }}
+        {{- end }}
         {{- if .Values.secretEnv.enabled }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
@@ -43,27 +46,48 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: app
+        - name: spc-web
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
               protocol: TCP
-          {{- if .Values.secretEnv.enabled }}
           env:
-            - name: HAS_SECRET_ENV
-              value: "true"
+            - name: AI_MODEL
+              value: {{ default .Values.ai.model .Values.gateway.env.AI_MODEL | quote }}
+            - name: AI_PROVIDER
+              value: {{ .Values.gateway.env.AI_PROVIDER | quote }}
+            - name: AI_API_BASE
+              value: {{ .Values.gateway.env.AI_API_BASE | quote }}
+            - name: DSPY_API_BASE
+              value: {{ .Values.gateway.env.DSPY_API_BASE | quote }}
+            - name: DSPY_TEMPERATURE
+              value: {{ .Values.gateway.env.DSPY_TEMPERATURE | quote }}
+            - name: DSPY_MAX_TOKENS
+              value: {{ .Values.gateway.env.DSPY_MAX_TOKENS | quote }}
+            - name: DSPY_TIMEOUT_SECONDS
+              value: {{ .Values.gateway.env.DSPY_TIMEOUT_SECONDS | quote }}
+            - name: AI_GATEWAY_PORT
+              value: "8080"
+            - name: SPC_WEB_DIST_DIR
+              value: /app/spc-web-dist
+          {{- if or .Values.gateway.secretEnv.enabled .Values.gateway.externalSecret.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "spc.gatewaySecretName" . }}
           {{- end }}
           volumeMounts:
-            - name: nginx-run
-              mountPath: /var/run
-            - name: nginx-cache
-              mountPath: /var/cache/nginx
             {{- if .Values.config.enabled }}
             - name: runtime-config
-              mountPath: /usr/share/nginx/html/config
+              mountPath: /app/spc-web-dist/config
             {{- end }}
+            - name: app-tmp
+              mountPath: /tmp
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           livenessProbe:
@@ -72,33 +96,8 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-        {{- if .Values.nginxExporter.enabled }}
-        - name: nginx-exporter
-          image: {{ .Values.nginxExporter.image }}
-          imagePullPolicy: IfNotPresent
-          args:
-            {{- toYaml .Values.nginxExporter.args | nindent 12 }}
-          ports:
-            - name: metrics
-              containerPort: {{ .Values.nginxExporter.port }}
-              protocol: TCP
-          securityContext:
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 50m
-              memory: 64Mi
-        {{- end }}
       volumes:
-        - name: nginx-run
-          emptyDir: {}
-        - name: nginx-cache
+        - name: app-tmp
           emptyDir: {}
         {{- if .Values.config.enabled }}
         - name: runtime-config

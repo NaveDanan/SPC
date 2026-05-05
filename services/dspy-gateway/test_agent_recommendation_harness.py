@@ -6,7 +6,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from main import AgentRecommendationHarness, DSPyGateway
+from main import (
+    AgentRecommendationHarness,
+    AgentTurnRequest,
+    ChatCompletionRequest,
+    DEFAULT_GATEWAY_API_KEY,
+    DSPyGateway,
+    SPCAgentHarness,
+    SPCAgentToolSession,
+    SPCKnowledgeLoader,
+    chat_completions,
+    gateway,
+)
 
 
 class AgentRecommendationHarnessTest(unittest.TestCase):
@@ -84,6 +95,116 @@ json
         self.assertNotIn("recommendation", narrative)
 
 
+def build_agent_request(**overrides: object) -> AgentTurnRequest:
+    payload = {
+        "messages": [{"role": "user", "content": "Configure an X-bar R chart for A and B by Date"}],
+        "language": "en",
+        "controls": {
+            "chartType": "individual",
+            "yColumns": ["A"],
+            "xAxisColumn": None,
+            "sampleSize": 3,
+            "chartLabel": "SPC Analysis Chart",
+            "zAxisLabel": "Sample",
+            "yAxisLabel": "Value",
+            "showControlLimits": True,
+            "showCenterLine": True,
+            "showRuleViolations": True,
+            "showSigma1": True,
+            "showSigma2": True,
+            "showSigma3": True,
+            "colorScheme": "default",
+        },
+        "availableHeaders": ["A", "B", "Date"],
+        "worksheet": {"activeSheetIndex": 0, "activeSheetName": "Sheet1", "worksheetCount": 1},
+        "dataset": {"summary": "Columns A, B, Date", "headers": ["A", "B", "Date"], "previewRows": [{"A": 1, "B": 2, "Date": "2024-01-01"}]},
+        "processed": {"statistics": {"mean": 1.5}, "ruleViolationCount": 0},
+        "selectedSheetIndex": 0,
+    }
+    payload.update(overrides)
+    return AgentTurnRequest(**payload)
+
+
+class SPCAgentToolsAndKnowledgeTest(unittest.TestCase):
+    def test_tool_registry_exposes_expected_tools_with_markdown(self) -> None:
+        harness = SPCAgentHarness()
+        names = [tool.name for tool in harness.tool_metadata]
+
+        self.assertEqual(names, ["list-tools", "read_controls", "update_controls"])
+        for tool in harness.tool_metadata:
+            self.assertTrue(tool.markdown.startswith("# "))
+            self.assertIn("Purpose:", tool.markdown)
+            self.assertTrue(tool.parameters)
+
+    def test_read_controls_and_update_controls_return_validated_patch(self) -> None:
+        harness = SPCAgentHarness()
+        session = SPCAgentToolSession(build_agent_request(), harness.tool_metadata)
+
+        snapshot = json.loads(session.read_controls(include=["current", "available"]))
+        self.assertTrue(snapshot["ok"])
+        self.assertEqual(snapshot["snapshot"]["current"]["chartType"], "individual")
+        self.assertEqual(snapshot["snapshot"]["available"]["headers"], ["A", "B", "Date"])
+
+        result = json.loads(session.update_controls(
+            chartType="xBarR",
+            yColumns=["A", "Missing", "B"],
+            xAxisColumn="Date",
+            sampleSize=9,
+            chartLabel="XBar-R by Date",
+            zAxisLabel="Collection Date",
+        ))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["patch"]["chartType"], "xBarR")
+        self.assertEqual(result["patch"]["yColumns"], ["A", "B"])
+        self.assertEqual(result["patch"]["xAxisColumn"], "Date")
+        self.assertEqual(result["patch"]["sampleSize"], 2)
+        self.assertIn("yColumns", result["applied"])
+
+    def test_update_controls_skips_invalid_columns(self) -> None:
+        harness = SPCAgentHarness()
+        session = SPCAgentToolSession(build_agent_request(), harness.tool_metadata)
+
+        result = json.loads(session.update_controls(yColumns=["Missing"], xAxisColumn="AlsoMissing"))
+
+        self.assertIn("yColumns", result["skipped"])
+        self.assertIn("xAxisColumn", result["skipped"])
+        self.assertNotIn("yColumns", result["patch"])
+
+    def test_knowledge_loader_selects_expected_markdown(self) -> None:
+        loader = SPCKnowledgeLoader()
+
+        docs = loader.load()
+        self.assertIn("i-mr.md", docs)
+        self.assertIn("xbar-r.md", docs)
+        self.assertIn("xbar-s.md", docs)
+
+        selection = loader.select(build_agent_request())
+        self.assertIn("xbar-r.md", selection.sources)
+        self.assertIn("X-bar R", selection.markdown)
+
+    def test_agent_turn_returns_mocked_harness_response(self) -> None:
+        request = build_agent_request()
+        expected = {
+            "content": "- Applied.",
+            "controlPatch": {"chartType": "xBarR", "yColumns": ["A", "B"], "sampleSize": 2},
+            "toolTrace": [{"tool": "update_controls"}],
+            "knowledgeSources": ["xbar-r.md"],
+            "needsClarification": False,
+            "model": "test-model",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+        with patch.object(DSPyGateway, "_configure", return_value=None):
+            gateway_instance = DSPyGateway()
+            gateway_instance._agent_harness = unittest.mock.Mock()
+            gateway_instance._agent_harness.run.return_value.model_dump.return_value = expected
+            gateway_instance._model_name = "test-model"
+            response = gateway_instance.agent_turn(request)
+
+        self.assertEqual(response, expected)
+
+
 class DSPyGatewayProviderResolutionTest(unittest.TestCase):
     def test_routes_google_openai_compat_base_to_native_gemini_provider(self) -> None:
         with patch.dict("os.environ", {"AI_PROVIDER": ""}):
@@ -106,6 +227,22 @@ class DSPyGatewayProviderResolutionTest(unittest.TestCase):
         self.assertEqual(model, "local-model")
         self.assertEqual(provider, "openai")
         self.assertEqual(api_base, "http://localhost:11434/v1")
+
+
+class GatewayToolRoutingTest(unittest.TestCase):
+    def test_routes_tool_enabled_requests_to_completion_passthrough(self) -> None:
+        expected = {"id": "chatcmpl-tool", "choices": [{"message": {"role": "assistant", "content": "done"}}]}
+        payload = ChatCompletionRequest(
+            messages=[{"role": "user", "content": "Inspect controls and update them"}],
+            tools=[{"type": "function", "function": {"name": "read_controls", "parameters": {"type": "object"}}}],
+        )
+
+        with patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "", "DSPY_GATEWAY_API_KEY": ""}, clear=False):
+            with patch.object(gateway, "complete_with_tools", return_value=expected) as complete_with_tools:
+                response = chat_completions(payload, authorization=f"Bearer {DEFAULT_GATEWAY_API_KEY}")
+
+        self.assertEqual(response, expected)
+        complete_with_tools.assert_called_once_with(payload)
 
 
 if __name__ == "__main__":
