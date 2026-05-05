@@ -20,7 +20,7 @@ const RuleViolationsPanel: React.FC = () => {
     );
   }
   
-  const { ruleViolations, controlLimits } = processedData;
+  const { ruleViolations, controlLimits, diagnostics = [], chartRecommendations = [] } = processedData;
   
   // Group violations by rule number
   const violationsByRule = ruleViolations.reduce((acc, violation) => {
@@ -69,6 +69,43 @@ const RuleViolationsPanel: React.FC = () => {
           }
         </p>
       </div>
+
+      {diagnostics.length > 0 && (
+        <div className="mb-4">
+          <h4 className="font-medium text-gray-700 mb-2">{t('ruleViolations.diagnostics')}</h4>
+          <div className="space-y-2">
+            {diagnostics.slice(0, 5).map((diagnostic) => (
+              <div
+                key={`${diagnostic.code}-${diagnostic.message}`}
+                className={`rounded-md p-3 text-sm ${
+                  diagnostic.severity === 'blocker'
+                    ? 'bg-red-50 text-red-700'
+                    : diagnostic.severity === 'warning'
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-blue-50 text-blue-700'
+                }`}
+              >
+                <span className="font-medium uppercase text-[11px]">{diagnostic.severity}</span>
+                <p>{diagnostic.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {chartRecommendations.length > 0 && (
+        <div className="mb-4">
+          <h4 className="font-medium text-gray-700 mb-2">{t('ruleViolations.recommendations')}</h4>
+          <div className="space-y-2">
+            {chartRecommendations.slice(0, 3).map((item) => (
+              <div key={`${item.chartType}-${item.reason}`} className="rounded-md bg-gray-50 p-3 text-sm">
+                <p className="font-medium text-gray-800">{item.chartType} · {item.status}</p>
+                <p className="text-gray-600">{item.reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Rule Violations */}
       {!isProcessInControl && (

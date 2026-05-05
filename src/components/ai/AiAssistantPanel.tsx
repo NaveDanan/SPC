@@ -42,6 +42,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     processedData,
     selectedColumns,
     xAxisColumn,
+    denominatorColumn,
     sampleSize,
     selectedChartType,
     chartOptions,
@@ -49,6 +50,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     setChartOptions,
     setSelectedColumns,
     setXAxisColumn,
+    setDenominatorColumn,
     setSampleSize,
     setActiveSheetIndex,
   } = useAppContext();
@@ -100,9 +102,10 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
         processedData,
         selectedColumns,
         xAxisColumn,
+        denominatorColumn,
         sampleSize,
       ),
-    [processedData, rawData, sampleSize, selectedColumns, xAxisColumn],
+    [denominatorColumn, processedData, rawData, sampleSize, selectedColumns, xAxisColumn],
   );
 
   const appendAssistantMessage = useCallback((content: string) => {
@@ -160,6 +163,16 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       }
     }
 
+    if (hasOwn(patch, 'denominatorColumn')) {
+      if (patch.denominatorColumn === null || patch.denominatorColumn === undefined) {
+        setDenominatorColumn(null);
+        applied.push('denominatorColumn');
+      } else if (typeof patch.denominatorColumn === 'string' && headers.includes(patch.denominatorColumn)) {
+        setDenominatorColumn(patch.denominatorColumn);
+        applied.push('denominatorColumn');
+      }
+    }
+
     const shouldUseYColumnsAsSubgroups =
       (nextChartType === 'xBarS' || nextChartType === 'xBarR') && nextSelectedColumns.length > 1;
     const nextSampleSize = shouldUseYColumnsAsSubgroups
@@ -205,7 +218,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     if (applied.length > 0) {
       suppressNextAgentAutopilotRef.current = true;
     }
-  }, [chartOptions, rawData?.headers, selectedChartType, selectedColumns, setChartOptions, setSampleSize, setSelectedChartType, setSelectedColumns, setXAxisColumn, t]);
+  }, [chartOptions, rawData?.headers, selectedChartType, selectedColumns, setChartOptions, setDenominatorColumn, setSampleSize, setSelectedChartType, setSelectedColumns, setXAxisColumn, t]);
 
   const runAgentModeTurn = useCallback(async (
     conversationForRequest: AiChatMessage[],
@@ -220,6 +233,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
       chartOptions,
       selectedColumns,
       xAxisColumn,
+      denominatorColumn,
       sampleSize,
       language,
       agentModeEnabled: true,
@@ -246,7 +260,7 @@ const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({ onClose }) => {
     }
 
     return await response.json() as AgentTurnResponse;
-  }, [chartOptions, datasetSummary, language, processedData, rawData, sampleSize, selectedAiSheetIndex, selectedChartType, selectedColumns, systemPrompt, xAxisColumn]);
+  }, [chartOptions, datasetSummary, denominatorColumn, language, processedData, rawData, sampleSize, selectedAiSheetIndex, selectedChartType, selectedColumns, systemPrompt, xAxisColumn]);
 
   const extractAiErrorMessage = async (response: Response): Promise<string> => {
     const fallback = `AI service request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ''}).`;

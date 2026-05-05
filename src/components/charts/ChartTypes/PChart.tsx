@@ -35,7 +35,7 @@ const PChart: React.FC = () => {
   
   const selectedColumn = selectedColumns[0];
   const data = processedData.data;
-  const { ucl, lcl, centerLine, sigma } = processedData.controlLimits;
+  const { ucl, lcl, centerLine, sigma, uclSeries, lclSeries, sigmaSeries, chartValues } = processedData.controlLimits;
   const { ruleViolations } = processedData;
   
   // Create labels for the X axis (index or chosen X column)
@@ -44,7 +44,12 @@ const PChart: React.FC = () => {
     : data.map((_, index) => `${index + 1}`);
   
   // Extract data values
-  const values = data.map(row => parseFloat(row[selectedColumn]));
+  const values = chartValues?.length === data.length
+    ? chartValues
+    : data.map(row => parseFloat(String(row[selectedColumn])));
+  const upperLimitValues = uclSeries?.length === values.length ? uclSeries : Array(values.length).fill(ucl);
+  const lowerLimitValues = lclSeries?.length === values.length ? lclSeries : Array(values.length).fill(lcl);
+  const oneSigmaValues = sigmaSeries?.length === values.length ? sigmaSeries : Array(values.length).fill(sigma);
   
   // Create point backgrounds with special highlight for violations
   const defaultPointColor = 'rgba(54, 162, 235, 0.8)';
@@ -81,7 +86,7 @@ const PChart: React.FC = () => {
       ...(chartOptions.showSigma1 ? [
         {
           label: '+1σ',
-          data: Array(values.length).fill(centerLine + sigma),
+          data: oneSigmaValues.map((pointSigma) => centerLine + pointSigma),
           borderColor: 'rgba(255, 205, 86, 0.6)',
           borderDash: [2, 2],
           borderWidth: 1,
@@ -90,7 +95,7 @@ const PChart: React.FC = () => {
         },
         {
           label: '-1σ',
-          data: Array(values.length).fill(centerLine - sigma),
+          data: oneSigmaValues.map((pointSigma) => Math.max(0, centerLine - pointSigma)),
           borderColor: 'rgba(255, 205, 86, 0.6)',
           borderDash: [2, 2],
           borderWidth: 1,
@@ -101,7 +106,7 @@ const PChart: React.FC = () => {
       ...(chartOptions.showSigma2 ? [
         {
           label: '+2σ',
-          data: Array(values.length).fill(centerLine + 2 * sigma),
+          data: oneSigmaValues.map((pointSigma) => centerLine + 2 * pointSigma),
           borderColor: 'rgba(255, 159, 64, 0.6)',
           borderDash: [3, 3],
           borderWidth: 1,
@@ -110,7 +115,7 @@ const PChart: React.FC = () => {
         },
         {
           label: '-2σ',
-          data: Array(values.length).fill(centerLine - 2 * sigma),
+          data: oneSigmaValues.map((pointSigma) => Math.max(0, centerLine - 2 * pointSigma)),
           borderColor: 'rgba(255, 159, 64, 0.6)',
           borderDash: [3, 3],
           borderWidth: 1,
@@ -121,7 +126,7 @@ const PChart: React.FC = () => {
       ...((chartOptions.showControlLimits || chartOptions.showSigma3) ? [
         {
           label: '+3σ (UCL)',
-          data: Array(values.length).fill(ucl),
+          data: upperLimitValues,
           borderColor: 'rgba(255, 99, 132, 0.9)',
           borderDash: [5, 5],
           borderWidth: 2,
@@ -130,7 +135,7 @@ const PChart: React.FC = () => {
         },
         {
           label: '-3σ (LCL)',
-          data: Array(values.length).fill(lcl),
+          data: lowerLimitValues,
           borderColor: 'rgba(255, 99, 132, 0.9)',
           borderDash: [5, 5],
           borderWidth: 2,

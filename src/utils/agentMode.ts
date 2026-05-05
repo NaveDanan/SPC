@@ -1,11 +1,12 @@
 import { ChartType } from '../types/DataTypes';
 
-const CHART_TYPES: ChartType[] = ['individual', 'pChart', 'npChart', 'xBarS', 'xBarR', 'ewma', 'histogram', 'scatterPlot'];
+const CHART_TYPES: ChartType[] = ['individual', 'pChart', 'npChart', 'cChart', 'uChart', 'xBarS', 'xBarR', 'ewma', 'histogram', 'scatterPlot'];
 
 export interface AgentRecommendation {
   chartType: ChartType | null;
   yColumns: string[];
   xAxisColumn?: string | null;
+  denominatorColumn?: string | null;
   sampleSize?: number;
   chartLabel?: string;
   zAxisLabel?: string;
@@ -130,6 +131,14 @@ const normalizeRecommendationPayload = (parsed: unknown): AgentRecommendation | 
           : undefined)
       : undefined;
 
+    const denominatorColumn = Object.prototype.hasOwnProperty.call(recommendation, 'denominatorColumn')
+      ? (typeof recommendation.denominatorColumn === 'string'
+        ? recommendation.denominatorColumn.trim() || null
+        : recommendation.denominatorColumn === null
+          ? null
+          : undefined)
+      : undefined;
+
     const sampleSize = Object.prototype.hasOwnProperty.call(recommendation, 'sampleSize')
       ? (typeof recommendation.sampleSize === 'number' && Number.isFinite(recommendation.sampleSize)
         ? Math.max(2, Math.min(25, Math.round(recommendation.sampleSize)))
@@ -148,6 +157,7 @@ const normalizeRecommendationPayload = (parsed: unknown): AgentRecommendation | 
       !chartType
       && yColumns.length === 0
       && xAxisColumn === undefined
+      && denominatorColumn === undefined
       && sampleSize === undefined
       && chartLabel === undefined
       && zAxisLabel === undefined
@@ -161,6 +171,7 @@ const normalizeRecommendationPayload = (parsed: unknown): AgentRecommendation | 
       chartType,
       yColumns,
       xAxisColumn,
+      denominatorColumn,
       sampleSize,
       chartLabel,
       zAxisLabel,
@@ -177,6 +188,7 @@ const scoreRecommendation = (recommendation: AgentRecommendation): number => {
   if (recommendation.chartType) score += 4;
   score += Math.min(recommendation.yColumns.length, 8) * 3;
   if (recommendation.xAxisColumn !== undefined) score += 1;
+  if (recommendation.denominatorColumn !== undefined) score += 2;
   if (recommendation.sampleSize !== undefined) score += 2;
   if (recommendation.chartLabel) score += 1;
   if (recommendation.zAxisLabel) score += 1;
@@ -237,10 +249,19 @@ export const validateAgentRecommendationAgainstHeaders = (
         ? recommendation.xAxisColumn
         : undefined;
 
+  const denominatorColumn = recommendation.denominatorColumn === undefined
+    ? undefined
+    : recommendation.denominatorColumn === null
+      ? null
+      : headers.includes(recommendation.denominatorColumn)
+        ? recommendation.denominatorColumn
+        : undefined;
+
   return {
     ...recommendation,
     yColumns,
     xAxisColumn,
+    denominatorColumn,
     chartLabel: normalizeOptionalLabel(recommendation.chartLabel),
     zAxisLabel: normalizeOptionalLabel(recommendation.zAxisLabel),
     yAxisLabel: normalizeOptionalLabel(recommendation.yAxisLabel),

@@ -4,12 +4,15 @@ import type { ChartOptions, ChartType, DataSet, ProcessedData } from '../types/D
 
 export const LIST_TOOLS_TOOL_NAME = 'list-tools';
 export const READ_CONTROLS_TOOL_NAME = 'read_controls';
+export const READ_SPC_DIAGNOSTICS_TOOL_NAME = 'read_spc_diagnostics';
 export const UPDATE_CONTROLS_TOOL_NAME = 'update_controls';
 
 export const AGENT_CHART_TYPES: ChartType[] = [
   'individual',
   'pChart',
   'npChart',
+  'cChart',
+  'uChart',
   'xBarS',
   'xBarR',
   'ewma',
@@ -23,6 +26,7 @@ export interface AgentControlsSnapshotInput {
   chartOptions: ChartOptions;
   selectedColumns: string[];
   xAxisColumn: string | null;
+  denominatorColumn?: string | null;
   sampleSize: number;
   language: Language;
   agentModeEnabled: boolean;
@@ -33,6 +37,7 @@ export interface UpdateControlsToolArgs {
   chartType?: ChartType | null;
   yColumns?: string[];
   xAxisColumn?: string | null;
+  denominatorColumn?: string | null;
   sampleSize?: number | null;
   chartLabel?: string | null;
   zAxisLabel?: string | null;
@@ -67,7 +72,7 @@ export interface AgentTurnResponse {
 const clampSampleSize = (value: number) => Math.max(2, Math.min(25, Math.round(value)));
 
 export const buildControlsSnapshot = (input: AgentControlsSnapshotInput) => {
-  const { rawData, selectedChartType, chartOptions, selectedColumns, xAxisColumn, sampleSize, language, agentModeEnabled, selectedAiSheetIndex } = input;
+  const { rawData, selectedChartType, chartOptions, selectedColumns, xAxisColumn, denominatorColumn, sampleSize, language, agentModeEnabled, selectedAiSheetIndex } = input;
   const activeSheetIndex = selectedAiSheetIndex ?? rawData?.activeSheetIndex ?? 0;
   const activeSheet = rawData?.sheets?.[activeSheetIndex] ?? null;
   const effectiveSampleSize = (selectedChartType === 'xBarS' || selectedChartType === 'xBarR') && selectedColumns.length > 1
@@ -79,6 +84,7 @@ export const buildControlsSnapshot = (input: AgentControlsSnapshotInput) => {
       chartType: selectedChartType,
       yColumns: selectedColumns,
       xAxisColumn,
+      denominatorColumn: denominatorColumn ?? null,
       sampleSize,
       effectiveSampleSize,
       chartLabel: chartOptions.title,
@@ -106,6 +112,7 @@ export const buildControlsSnapshot = (input: AgentControlsSnapshotInput) => {
         'chartType',
         'yColumns',
         'xAxisColumn',
+        'denominatorColumn',
         'sampleSize',
         'chartLabel',
         'zAxisLabel',
@@ -133,7 +140,7 @@ export const buildControlsSnapshot = (input: AgentControlsSnapshotInput) => {
     assistant: {
       language,
       agentModeEnabled,
-      tools: [LIST_TOOLS_TOOL_NAME, READ_CONTROLS_TOOL_NAME, UPDATE_CONTROLS_TOOL_NAME],
+      tools: [LIST_TOOLS_TOOL_NAME, READ_CONTROLS_TOOL_NAME, READ_SPC_DIAGNOSTICS_TOOL_NAME, UPDATE_CONTROLS_TOOL_NAME],
     },
   };
 };
@@ -162,6 +169,10 @@ const summarizeProcessedData = (processedData: ProcessedData | null) => {
     statistics: processedData.statistics,
     ruleViolationCount: processedData.ruleViolations.length,
     controlLimits: processedData.controlLimits,
+    dataProfile: processedData.dataProfile,
+    diagnostics: processedData.diagnostics,
+    chartRecommendations: processedData.chartRecommendations,
+    capabilityStatus: processedData.capabilityStatus,
   };
 };
 

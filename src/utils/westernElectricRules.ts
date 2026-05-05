@@ -7,25 +7,43 @@ export const detectRuleViolations = (
   controlLimits: ControlLimits
 ): RuleViolation[] => {
   const violations: RuleViolation[] = [];
-  const values = data.map(row => parseFloat(row[column]));
+  const values = data.map((row) => {
+    const parsed = parseFloat(String(row[column]));
+    return Number.isFinite(parsed) ? parsed : null;
+  });
   const { ucl, lcl, centerLine, sigma } = controlLimits;
+
+  const valueAt = (index: number): number | null => values[index] ?? null;
+  const sigmaAt = (index: number): number => {
+    const pointSigma = controlLimits.sigmaSeries?.[index];
+    return Number.isFinite(pointSigma) && pointSigma > 0 ? pointSigma : sigma;
+  };
+  const uclAt = (index: number): number => {
+    const pointUcl = controlLimits.uclSeries?.[index];
+    return Number.isFinite(pointUcl) ? pointUcl : ucl;
+  };
+  const lclAt = (index: number): number => {
+    const pointLcl = controlLimits.lclSeries?.[index];
+    return Number.isFinite(pointLcl) ? pointLcl : lcl;
+  };
+  const pushViolation = (index: number, ruleNumber: number, description: string) => {
+    const pointValue = valueAt(index);
+    if (pointValue === null) {
+      return;
+    }
+    violations.push({ index, pointValue, ruleNumber, description });
+  };
   
   // Rule 1: Any point beyond the control limits (> UCL or < LCL)
   for (let i = 0; i < values.length; i++) {
-    if (values[i] > ucl) {
-      violations.push({
-        index: i,
-        pointValue: values[i],
-        ruleNumber: 1,
-        description: 'Point beyond Upper Control Limit (UCL)'
-      });
-    } else if (values[i] < lcl) {
-      violations.push({
-        index: i,
-        pointValue: values[i],
-        ruleNumber: 1,
-        description: 'Point beyond Lower Control Limit (LCL)'
-      });
+    const value = valueAt(i);
+    if (value === null) {
+      continue;
+    }
+    if (value > uclAt(i)) {
+      pushViolation(i, 1, 'Point beyond Upper Control Limit (UCL)');
+    } else if (value < lclAt(i)) {
+      pushViolation(i, 1, 'Point beyond Lower Control Limit (LCL)');
     }
   }
   
@@ -33,9 +51,13 @@ export const detectRuleViolations = (
   const checkConsecutiveOneSide = (startIndex: number) => {
     if (startIndex + 8 >= values.length) return false;
     
-    const initialSide = values[startIndex] > centerLine;
+    const firstValue = valueAt(startIndex);
+    if (firstValue === null || firstValue === centerLine) return false;
+    const initialSide = firstValue > centerLine;
     for (let i = startIndex + 1; i < startIndex + 9; i++) {
-      const currentSide = values[i] > centerLine;
+      const currentValue = valueAt(i);
+      if (currentValue === null || currentValue === centerLine) return false;
+      const currentSide = currentValue > centerLine;
       if (currentSide !== initialSide) return false;
     }
     return true;
@@ -43,14 +65,9 @@ export const detectRuleViolations = (
   
   for (let i = 0; i < values.length - 8; i++) {
     if (checkConsecutiveOneSide(i)) {
-      const side = values[i] > centerLine ? 'above' : 'below';
+      const side = (valueAt(i) ?? centerLine) > centerLine ? 'above' : 'below';
       for (let j = i; j < i + 9; j++) {
-        violations.push({
-          index: j,
-          pointValue: values[j],
-          ruleNumber: 2,
-          description: `Part of 9 consecutive points ${side} the center line`
-        });
+        pushViolation(j, 2, `Part of 9 consecutive points ${side} the center line`);
       }
       // Skip ahead to avoid detecting the same pattern multiple times
       i += 8;
@@ -65,8 +82,11 @@ export const detectRuleViolations = (
     let decreasing = true;
     
     for (let i = startIndex; i < startIndex + 5; i++) {
-      if (values[i] >= values[i + 1]) increasing = false;
-      if (values[i] <= values[i + 1]) decreasing = false;
+      const current = valueAt(i);
+      const next = valueAt(i + 1);
+      if (current === null || next === null) return false;
+      if (current >= next) increasing = false;
+      if (current <= next) decreasing = false;
     }
     
     return increasing || decreasing;
@@ -74,14 +94,9 @@ export const detectRuleViolations = (
   
   for (let i = 0; i < values.length - 5; i++) {
     if (checkConsecutiveTrend(i)) {
-      const trend = values[i] < values[i + 1] ? 'increasing' : 'decreasing';
+      const trend = (valueAt(i) ?? 0) < (valueAt(i + 1) ?? 0) ? 'increasing' : 'decreasing';
       for (let j = i; j < i + 6; j++) {
-        violations.push({
-          index: j,
-          pointValue: values[j],
-          ruleNumber: 3,
-          description: `Part of 6 consecutive points ${trend}`
-        });
+        pushViolation(j, 3, `Part of 6 consecutive points ${trend}`);
       }
       // Skip ahead
       i += 5;
@@ -93,9 +108,12 @@ export const detectRuleViolations = (
     if (startIndex + 13 >= values.length) return false;
     
     let alternating = true;
-    for (let i = startIndex; i < startIndex + 13; i++) {
-      if ((values[i] < values[i + 1] && values[i + 1] < values[i + 2]) || 
-          (values[i] > values[i + 1] && values[i + 1] > values[i + 2])) {
+    for (let i = startIndex; i < startIndex + 12; i++) {
+      const a = valueAt(i);
+      const b = valueAt(i + 1);
+      const c = valueAt(i + 2);
+      if (a === null || b === null || c === null || a === b || b === c) return false;
+      if ((a < b && b < c) || (a > b && b > c)) {
         alternating = false;
         break;
       }
@@ -107,12 +125,7 @@ export const detectRuleViolations = (
   for (let i = 0; i < values.length - 13; i++) {
     if (checkAlternating(i)) {
       for (let j = i; j < i + 14; j++) {
-        violations.push({
-          index: j,
-          pointValue: values[j],
-          ruleNumber: 4,
-          description: 'Part of 14 consecutive points alternating up and down'
-        });
+        pushViolation(j, 4, 'Part of 14 consecutive points alternating up and down');
       }
       // Skip ahead
       i += 13;
@@ -123,15 +136,15 @@ export const detectRuleViolations = (
   const check2of3Beyond2Sigma = (startIndex: number) => {
     if (startIndex + 2 >= values.length) return false;
     
-    const upperTwoSigma = centerLine + 2 * sigma;
-    const lowerTwoSigma = centerLine - 2 * sigma;
-    
     let countAbove = 0;
     let countBelow = 0;
     
     for (let i = startIndex; i < startIndex + 3; i++) {
-      if (values[i] > upperTwoSigma) countAbove++;
-      if (values[i] < lowerTwoSigma) countBelow++;
+      const value = valueAt(i);
+      const pointSigma = sigmaAt(i);
+      if (value === null || !Number.isFinite(pointSigma) || pointSigma <= 0) return false;
+      if (value > centerLine + 2 * pointSigma) countAbove++;
+      if (value < centerLine - 2 * pointSigma) countBelow++;
     }
     
     return countAbove >= 2 || countBelow >= 2;
@@ -139,21 +152,27 @@ export const detectRuleViolations = (
   
   for (let i = 0; i < values.length - 2; i++) {
     if (check2of3Beyond2Sigma(i)) {
-      const above = values[i] > centerLine + 2 * sigma;
+      let aboveCount = 0;
+      let belowCount = 0;
+      for (let j = i; j < i + 3; j++) {
+        const value = valueAt(j);
+        const pointSigma = sigmaAt(j);
+        if (value !== null && value > centerLine + 2 * pointSigma) aboveCount++;
+        if (value !== null && value < centerLine - 2 * pointSigma) belowCount++;
+      }
+      const above = aboveCount >= belowCount;
       const zone = above ? 'above +2σ' : 'below -2σ';
       
       for (let j = i; j < i + 3; j++) {
+        const value = valueAt(j);
+        const pointSigma = sigmaAt(j);
+        if (value === null) continue;
         const beyond2Sigma = above 
-          ? values[j] > centerLine + 2 * sigma 
-          : values[j] < centerLine - 2 * sigma;
+          ? value > centerLine + 2 * pointSigma 
+          : value < centerLine - 2 * pointSigma;
           
         if (beyond2Sigma) {
-          violations.push({
-            index: j,
-            pointValue: values[j],
-            ruleNumber: 5,
-            description: `Part of 2 out of 3 consecutive points ${zone}`
-          });
+          pushViolation(j, 5, `Part of 2 out of 3 consecutive points ${zone}`);
         }
       }
       
@@ -166,15 +185,15 @@ export const detectRuleViolations = (
   const check4of5Beyond1Sigma = (startIndex: number) => {
     if (startIndex + 4 >= values.length) return false;
     
-    const upperOneSigma = centerLine + sigma;
-    const lowerOneSigma = centerLine - sigma;
-    
     let countAbove = 0;
     let countBelow = 0;
     
     for (let i = startIndex; i < startIndex + 5; i++) {
-      if (values[i] > upperOneSigma) countAbove++;
-      if (values[i] < lowerOneSigma) countBelow++;
+      const value = valueAt(i);
+      const pointSigma = sigmaAt(i);
+      if (value === null || !Number.isFinite(pointSigma) || pointSigma <= 0) return false;
+      if (value > centerLine + pointSigma) countAbove++;
+      if (value < centerLine - pointSigma) countBelow++;
     }
     
     return countAbove >= 4 || countBelow >= 4;
@@ -182,21 +201,27 @@ export const detectRuleViolations = (
   
   for (let i = 0; i < values.length - 4; i++) {
     if (check4of5Beyond1Sigma(i)) {
-      const above = values[i] > centerLine + sigma;
+      let aboveCount = 0;
+      let belowCount = 0;
+      for (let j = i; j < i + 5; j++) {
+        const value = valueAt(j);
+        const pointSigma = sigmaAt(j);
+        if (value !== null && value > centerLine + pointSigma) aboveCount++;
+        if (value !== null && value < centerLine - pointSigma) belowCount++;
+      }
+      const above = aboveCount >= belowCount;
       const zone = above ? 'above +1σ' : 'below -1σ';
       
       for (let j = i; j < i + 5; j++) {
+        const value = valueAt(j);
+        const pointSigma = sigmaAt(j);
+        if (value === null) continue;
         const beyond1Sigma = above 
-          ? values[j] > centerLine + sigma 
-          : values[j] < centerLine - sigma;
+          ? value > centerLine + pointSigma 
+          : value < centerLine - pointSigma;
           
         if (beyond1Sigma) {
-          violations.push({
-            index: j,
-            pointValue: values[j],
-            ruleNumber: 6,
-            description: `Part of 4 out of 5 consecutive points ${zone}`
-          });
+          pushViolation(j, 6, `Part of 4 out of 5 consecutive points ${zone}`);
         }
       }
       
@@ -209,11 +234,10 @@ export const detectRuleViolations = (
   const check15WithinOneSigma = (startIndex: number) => {
     if (startIndex + 14 >= values.length) return false;
     
-    const upperOneSigma = centerLine + sigma;
-    const lowerOneSigma = centerLine - sigma;
-    
     for (let i = startIndex; i < startIndex + 15; i++) {
-      if (values[i] > upperOneSigma || values[i] < lowerOneSigma) {
+      const value = valueAt(i);
+      const pointSigma = sigmaAt(i);
+      if (value === null || value > centerLine + pointSigma || value < centerLine - pointSigma) {
         return false;
       }
     }
@@ -224,12 +248,7 @@ export const detectRuleViolations = (
   for (let i = 0; i < values.length - 14; i++) {
     if (check15WithinOneSigma(i)) {
       for (let j = i; j < i + 15; j++) {
-        violations.push({
-          index: j,
-          pointValue: values[j],
-          ruleNumber: 7,
-          description: 'Part of 15 consecutive points within 1σ (process too consistent)'
-        });
+        pushViolation(j, 7, 'Part of 15 consecutive points within 1σ (process too consistent)');
       }
       // Skip ahead
       i += 14;
@@ -240,11 +259,10 @@ export const detectRuleViolations = (
   const check8BeyondOneSigma = (startIndex: number) => {
     if (startIndex + 7 >= values.length) return false;
     
-    const upperOneSigma = centerLine + sigma;
-    const lowerOneSigma = centerLine - sigma;
-    
     for (let i = startIndex; i < startIndex + 8; i++) {
-      if (values[i] <= upperOneSigma && values[i] >= lowerOneSigma) {
+      const value = valueAt(i);
+      const pointSigma = sigmaAt(i);
+      if (value === null || (value <= centerLine + pointSigma && value >= centerLine - pointSigma)) {
         return false;
       }
     }
@@ -255,12 +273,7 @@ export const detectRuleViolations = (
   for (let i = 0; i < values.length - 7; i++) {
     if (check8BeyondOneSigma(i)) {
       for (let j = i; j < i + 8; j++) {
-        violations.push({
-          index: j,
-          pointValue: values[j],
-          ruleNumber: 8,
-          description: 'Part of 8 consecutive points beyond 1σ on either side'
-        });
+        pushViolation(j, 8, 'Part of 8 consecutive points beyond 1σ on either side');
       }
       // Skip ahead
       i += 7;

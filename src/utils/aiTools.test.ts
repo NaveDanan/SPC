@@ -29,6 +29,7 @@ describe('aiTools', () => {
       },
       selectedColumns: ['A', 'B'],
       xAxisColumn: null,
+      denominatorColumn: 'B',
       sampleSize: 3,
       language: 'en',
       agentModeEnabled: true,
@@ -37,10 +38,11 @@ describe('aiTools', () => {
 
     expect(snapshot.current.chartType).toBe('xBarR');
     expect(snapshot.current.yColumns).toEqual(['A', 'B']);
+    expect(snapshot.current.denominatorColumn).toBe('B');
     expect(snapshot.current.effectiveSampleSize).toBe(2);
     expect(snapshot.available.headers).toEqual(['A', 'B']);
     expect(snapshot.available.sampleSize.lockedToYColumns).toBe(true);
-    expect(snapshot.assistant.tools).toEqual(['list-tools', 'read_controls', 'update_controls']);
+    expect(snapshot.assistant.tools).toEqual(['list-tools', 'read_controls', 'read_spc_diagnostics', 'update_controls']);
   });
 
   it('returns only the requested snapshot sections', () => {

@@ -13,7 +13,6 @@ import {
 } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { useAppContext } from '../../../context/AppContext';
-import { calculateEWMAValues } from '../../../utils/spcCalculations';
 
 ChartJS.register(
   CategoryScale,
@@ -37,7 +36,7 @@ const EWMAChart: React.FC = () => {
   const selectedColumn = selectedColumns[0];
   const xColumn = xAxisColumn;
   const data = processedData.data;
-  const { ucl, lcl, centerLine, sigma } = processedData.controlLimits;
+  const { ucl, lcl, centerLine, sigma, uclSeries, lclSeries, sigmaSeries, chartValues } = processedData.controlLimits;
   const { ruleViolations } = processedData;
   
   // Create labels for the X axis (index or chosen X column)
@@ -50,14 +49,18 @@ const EWMAChart: React.FC = () => {
   
   // Calculate EWMA values with lambda = 0.2
   const lambda = 0.2;
-  const ewmaValues = calculateEWMAValues(values, lambda);
-  const asymSigma = sigma * Math.sqrt(lambda / (2 - lambda));
+  const ewmaValues = chartValues?.length === values.length ? chartValues : values;
+  const upperLimitValues = uclSeries?.length === values.length ? uclSeries : Array(values.length).fill(ucl);
+  const lowerLimitValues = lclSeries?.length === values.length ? lclSeries : Array(values.length).fill(lcl);
+  const ewmaSigmaValues = sigmaSeries?.length === values.length
+    ? sigmaSeries
+    : Array(values.length).fill(sigma * Math.sqrt(lambda / (2 - lambda)));
   
   // Create point backgrounds with special highlight for violations
   const defaultPointColor = 'rgba(75, 192, 192, 0.8)';
   const pointBackgroundColors = ewmaValues.map((val, index) => {
     if (!chartOptions.showRuleViolations) return defaultPointColor;
-    const beyondLimits = val > ucl || val < lcl;
+    const beyondLimits = val > upperLimitValues[index] || val < lowerLimitValues[index];
     const hasViolation = ruleViolations.some(v => v.index === index);
     return beyondLimits || hasViolation ? 'red' : defaultPointColor;
   });
@@ -99,16 +102,16 @@ const EWMAChart: React.FC = () => {
       ] : []),
       // Control limits
       ...(chartOptions.showSigma1 ? [
-        { label: '+1σ', data: Array(values.length).fill(centerLine + asymSigma), borderColor: 'rgba(255,205,86,0.6)', borderDash: [2,2], borderWidth: 1, pointRadius: 0, fill: false },
-        { label: '-1σ', data: Array(values.length).fill(centerLine - asymSigma), borderColor: 'rgba(255,205,86,0.6)', borderDash: [2,2], borderWidth: 1, pointRadius: 0, fill: false },
+        { label: '+1σ', data: ewmaSigmaValues.map((pointSigma) => centerLine + pointSigma), borderColor: 'rgba(255,205,86,0.6)', borderDash: [2,2], borderWidth: 1, pointRadius: 0, fill: false },
+        { label: '-1σ', data: ewmaSigmaValues.map((pointSigma) => centerLine - pointSigma), borderColor: 'rgba(255,205,86,0.6)', borderDash: [2,2], borderWidth: 1, pointRadius: 0, fill: false },
       ] : []),
       ...(chartOptions.showSigma2 ? [
-        { label: '+2σ', data: Array(values.length).fill(centerLine + 2*asymSigma), borderColor: 'rgba(255,159,64,0.6)', borderDash: [3,3], borderWidth: 1, pointRadius: 0, fill: false },
-        { label: '-2σ', data: Array(values.length).fill(centerLine - 2*asymSigma), borderColor: 'rgba(255,159,64,0.6)', borderDash: [3,3], borderWidth: 1, pointRadius: 0, fill: false },
+        { label: '+2σ', data: ewmaSigmaValues.map((pointSigma) => centerLine + 2*pointSigma), borderColor: 'rgba(255,159,64,0.6)', borderDash: [3,3], borderWidth: 1, pointRadius: 0, fill: false },
+        { label: '-2σ', data: ewmaSigmaValues.map((pointSigma) => centerLine - 2*pointSigma), borderColor: 'rgba(255,159,64,0.6)', borderDash: [3,3], borderWidth: 1, pointRadius: 0, fill: false },
       ] : []),
       ...((chartOptions.showControlLimits || chartOptions.showSigma3) ? [
-        { label: 'UCL', data: Array(values.length).fill(ucl), borderColor: 'rgba(255,99,132,0.9)', borderDash: [5,5], borderWidth: 2, pointRadius: 0, fill: false },
-        { label: 'LCL', data: Array(values.length).fill(lcl), borderColor: 'rgba(255,99,132,0.9)', borderDash: [5,5], borderWidth: 2, pointRadius: 0, fill: false },
+        { label: 'UCL', data: upperLimitValues, borderColor: 'rgba(255,99,132,0.9)', borderDash: [5,5], borderWidth: 2, pointRadius: 0, fill: false },
+        { label: 'LCL', data: lowerLimitValues, borderColor: 'rgba(255,99,132,0.9)', borderDash: [5,5], borderWidth: 2, pointRadius: 0, fill: false },
       ] : []),
     ],
   };
@@ -154,9 +157,9 @@ const EWMAChart: React.FC = () => {
             
             if (context.dataset.label === 'EWMA') {
               if (chartOptions.showRuleViolations) {
-                if (ewmaValues[index] > ucl) {
+                if (ewmaValues[index] > upperLimitValues[index]) {
                   labels.push('Above UCL');
-                } else if (ewmaValues[index] < lcl) {
+                } else if (ewmaValues[index] < lowerLimitValues[index]) {
                   labels.push('Below LCL');
                 }
                 const hasViolation = ruleViolations.some(v => v.index === index);

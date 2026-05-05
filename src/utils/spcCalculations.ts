@@ -1,5 +1,12 @@
 import jStat from 'jstat';
-import { ControlLimits, ChartType, DataPoint } from '../types/DataTypes';
+import {
+  CapabilityStatus,
+  ControlLimits,
+  ChartType,
+  DataPoint,
+  DataProfile,
+  RuleViolation,
+} from '../types/DataTypes';
 
 // Helper to compute B3/B4 from c4
 const computeB3B4 = (c4: number) => {
@@ -64,16 +71,10 @@ export const calculateStandardDeviation = (data: number[]): number => {
   return jStat.stdev(data, true);
 };
 
-export interface CapabilityIndices {
-  cp: number;
-  cpl: number;
-  cpu: number;
-  cpk: number;
-}
-
 export interface CapabilitySpecLimits {
   lowerSpecLimit?: number | null;
   upperSpecLimit?: number | null;
+  targetValue?: number | null;
 }
 
 const finiteOrNull = (value: number | null | undefined): number | null => (
@@ -84,7 +85,7 @@ export const calculateCapabilityIndices = (
   mean: number,
   sigma: number,
   specLimits: CapabilitySpecLimits
-): CapabilityIndices => {
+): Pick<CapabilityStatus['indices'], 'cp' | 'cpl' | 'cpu' | 'cpk'> => {
   const empty = {
     cp: Number.NaN,
     cpl: Number.NaN,
@@ -124,6 +125,114 @@ export const calculateCapabilityIndices = (
   return { cp, cpl, cpu, cpk };
 };
 
+export const calculateCapabilityStatus = (
+  values: number[],
+  mean: number,
+  withinSigma: number,
+  specLimits: CapabilitySpecLimits,
+  options: {
+    chartType: ChartType;
+    dataProfile?: DataProfile;
+    ruleViolations?: RuleViolation[];
+  }
+): CapabilityStatus => {
+  const emptyIndices = {
+    cp: Number.NaN,
+    cpl: Number.NaN,
+    cpu: Number.NaN,
+    cpk: Number.NaN,
+    pp: Number.NaN,
+    ppl: Number.NaN,
+    ppu: Number.NaN,
+    ppk: Number.NaN,
+    cpm: Number.NaN,
+  };
+
+  const lowerSpecLimit = finiteOrNull(specLimits.lowerSpecLimit);
+  const upperSpecLimit = finiteOrNull(specLimits.upperSpecLimit);
+  const targetValue = finiteOrNull(specLimits.targetValue);
+  const reasons: string[] = [];
+  const isAttributeChart = ['pChart', 'npChart', 'cChart', 'uChart'].includes(options.chartType);
+
+  if (isAttributeChart) {
+    return {
+      readiness: 'notApplicable',
+      indices: emptyIndices,
+      reasons: ['Capability indices require continuous variable data, not attribute counts or proportions.'],
+    };
+  }
+
+  if (lowerSpecLimit === null && upperSpecLimit === null) {
+    return {
+      readiness: 'notApplicable',
+      indices: emptyIndices,
+      reasons: ['Add at least one specification limit before interpreting capability.'],
+    };
+  }
+
+  if (lowerSpecLimit !== null && upperSpecLimit !== null && upperSpecLimit <= lowerSpecLimit) {
+    return {
+      readiness: 'notApplicable',
+      indices: emptyIndices,
+      reasons: ['Upper specification limit must be greater than lower specification limit.'],
+    };
+  }
+
+  if (!Number.isFinite(mean) || !Number.isFinite(withinSigma) || withinSigma <= 0) {
+    return {
+      readiness: 'notApplicable',
+      indices: emptyIndices,
+      reasons: ['A positive within-process sigma estimate is required for capability.'],
+    };
+  }
+
+  const cleanValues = values.filter(Number.isFinite);
+  const overallSigma = cleanValues.length > 1 ? calculateStandardDeviation(cleanValues) : Number.NaN;
+  const within = calculateCapabilityIndices(mean, withinSigma, { lowerSpecLimit, upperSpecLimit });
+  const performance = calculateCapabilityIndices(mean, overallSigma, { lowerSpecLimit, upperSpecLimit });
+
+  let cpm = Number.NaN;
+  if (
+    lowerSpecLimit !== null
+    && upperSpecLimit !== null
+    && targetValue !== null
+    && Number.isFinite(overallSigma)
+    && overallSigma > 0
+  ) {
+    const denominator = 6 * Math.sqrt(overallSigma ** 2 + (mean - targetValue) ** 2);
+    cpm = denominator > 0 ? (upperSpecLimit - lowerSpecLimit) / denominator : Number.NaN;
+  }
+
+  if (cleanValues.length < 30) {
+    reasons.push('Capability is preliminary with fewer than 30 usable observations.');
+  }
+  if ((options.ruleViolations?.length ?? 0) > 0) {
+    reasons.push('Capability is preliminary because control-chart rules indicate instability.');
+  }
+  if (Math.abs(options.dataProfile?.skewness ?? 0) > 1) {
+    reasons.push('Capability is preliminary because the selected data are strongly skewed.');
+  }
+  if (Math.abs(options.dataProfile?.lag1Autocorrelation ?? 0) > 0.35) {
+    reasons.push('Capability is preliminary because observations appear autocorrelated.');
+  }
+
+  return {
+    readiness: reasons.length ? 'preliminary' : 'ready',
+    indices: {
+      cp: within.cp,
+      cpl: within.cpl,
+      cpu: within.cpu,
+      cpk: within.cpk,
+      pp: performance.cp,
+      ppl: performance.cpl,
+      ppu: performance.cpu,
+      ppk: performance.cpk,
+      cpm,
+    },
+    reasons: reasons.length ? reasons : ['Process appears stable enough for initial capability interpretation.'],
+  };
+};
+
 // Calculate control limits for Individual chart
 export const calculateIndividualControlLimits = (data: number[]): ControlLimits => {
   const mean = calculateMean(data);
@@ -145,16 +254,93 @@ export const calculateIndividualControlLimits = (data: number[]): ControlLimits 
   };
 };
 
+const clampLowerLimit = (value: number): number => Math.max(0, value);
+
+const fixedSeries = (value: number, length: number): number[] => Array(length).fill(value);
+
+const numericValuesFromRows = (data: DataPoint[], column: string): number[] => (
+  data.map(row => parseFloat(String(row[column]))).filter(Number.isFinite)
+);
+
+const numericSeriesFromRows = (data: DataPoint[], column: string): number[] => (
+  data.map(row => parseFloat(String(row[column])))
+);
+
+const positiveDenominatorsFromRows = (data: DataPoint[], denominatorColumn?: string | null): Array<number | null> => {
+  if (!denominatorColumn) {
+    return data.map(() => null);
+  }
+
+  return data.map((row) => {
+    const value = parseFloat(String(row[denominatorColumn]));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
+};
+
 // Calculate control limits for P Chart (proportion)
-export const calculatePChartLimits = (data: number[], sampleSize: number): ControlLimits => {
-  const p = calculateMean(data);
+export const calculatePChartLimits = (
+  data: number[],
+  sampleSize: number,
+  denominators?: Array<number | null>
+): ControlLimits => {
+  const hasPointwiseDenominators = Boolean(denominators?.some((value) => value !== null));
+
+  if (hasPointwiseDenominators && denominators) {
+    const validPairs = data
+      .map((count, index) => ({ count, denominator: denominators[index] }))
+      .filter((pair): pair is { count: number; denominator: number } => (
+        Number.isFinite(pair.count)
+        && pair.denominator !== null
+        && Number.isFinite(pair.denominator)
+        && pair.denominator > 0
+      ));
+
+    const totalCount = validPairs.reduce((sum, pair) => sum + pair.count, 0);
+    const totalDenominator = validPairs.reduce((sum, pair) => sum + pair.denominator, 0);
+    const p = totalDenominator > 0 ? totalCount / totalDenominator : Number.NaN;
+    const chartValues = data.map((count, index) => {
+      const denominator = denominators[index];
+      return denominator && denominator > 0 && Number.isFinite(count) ? count / denominator : Number.NaN;
+    });
+    const denominatorSeries = denominators.map((value) => value ?? Number.NaN);
+    const sigmaSeries = denominatorSeries.map((denominator) => (
+      Number.isFinite(denominator) && denominator > 0 && p >= 0 && p <= 1
+        ? Math.sqrt(p * (1 - p) / denominator)
+        : Number.NaN
+    ));
+    const uclSeries = sigmaSeries.map((sigma) => Math.min(1, p + 3 * sigma));
+    const lclSeries = sigmaSeries.map((sigma) => clampLowerLimit(p - 3 * sigma));
+    const finiteUcls = uclSeries.filter(Number.isFinite);
+    const finiteLcls = lclSeries.filter(Number.isFinite);
+
+    return {
+      ucl: finiteUcls.length ? calculateMean(finiteUcls) : Number.NaN,
+      lcl: finiteLcls.length ? calculateMean(finiteLcls) : Number.NaN,
+      centerLine: p,
+      sigma: calculateMean(sigmaSeries.filter(Number.isFinite)),
+      uclSeries,
+      lclSeries,
+      sigmaSeries,
+      denominatorSeries,
+      chartValues,
+    };
+  }
+
+  const finiteData = data.filter(Number.isFinite);
+  const p = calculateMean(finiteData);
   const sigma = Math.sqrt(p * (1 - p) / sampleSize);
+  const chartValues = data.map((value) => Number.isFinite(value) ? value : Number.NaN);
   
   return {
-    ucl: p + 3 * sigma,
-    lcl: Math.max(0, p - 3 * sigma), // LCL can't be negative for p charts
+    ucl: Math.min(1, p + 3 * sigma),
+    lcl: clampLowerLimit(p - 3 * sigma), // LCL can't be negative for p charts
     centerLine: p,
-    sigma
+    sigma,
+    uclSeries: fixedSeries(Math.min(1, p + 3 * sigma), data.length),
+    lclSeries: fixedSeries(clampLowerLimit(p - 3 * sigma), data.length),
+    sigmaSeries: fixedSeries(sigma, data.length),
+    denominatorSeries: fixedSeries(sampleSize, data.length),
+    chartValues,
   };
 };
 
@@ -166,9 +352,74 @@ export const calculateNPChartLimits = (data: number[], sampleSize: number): Cont
   
   return {
     ucl: np + 3 * sigma,
-    lcl: Math.max(0, np - 3 * sigma), // LCL can't be negative for np charts
+    lcl: clampLowerLimit(np - 3 * sigma), // LCL can't be negative for np charts
     centerLine: np,
-    sigma
+    sigma,
+    chartValues: data,
+  };
+};
+
+export const calculateCChartLimits = (data: number[]): ControlLimits => {
+  const cBar = calculateMean(data);
+  const sigma = Math.sqrt(Math.max(0, cBar));
+
+  return {
+    ucl: cBar + 3 * sigma,
+    lcl: clampLowerLimit(cBar - 3 * sigma),
+    centerLine: cBar,
+    sigma,
+    chartValues: data,
+  };
+};
+
+export const calculateUChartLimits = (
+  data: number[],
+  sampleSize: number,
+  denominators?: Array<number | null>
+): ControlLimits => {
+  const hasPointwiseDenominators = Boolean(denominators?.some((value) => value !== null));
+  const denominatorSeries = hasPointwiseDenominators
+    ? (denominators ?? []).map((value) => value ?? Number.NaN)
+    : fixedSeries(sampleSize, data.length);
+
+  const sourceData = data;
+  const validPairs = sourceData
+    .map((count, index) => ({ count, denominator: denominatorSeries[index] }))
+    .filter((pair) => (
+      Number.isFinite(pair.count)
+      && Number.isFinite(pair.denominator)
+      && pair.denominator > 0
+    ));
+
+  const totalCount = validPairs.reduce((sum, pair) => sum + pair.count, 0);
+  const totalDenominator = validPairs.reduce((sum, pair) => sum + pair.denominator, 0);
+  const uBar = totalDenominator > 0 ? totalCount / totalDenominator : Number.NaN;
+  const chartValues = sourceData.map((count, index) => {
+    const denominator = denominatorSeries[index];
+    return Number.isFinite(count) && Number.isFinite(denominator) && denominator > 0
+      ? count / denominator
+      : Number.NaN;
+  });
+  const sigmaSeries = denominatorSeries.map((denominator) => (
+    Number.isFinite(denominator) && denominator > 0 && Number.isFinite(uBar)
+      ? Math.sqrt(Math.max(0, uBar / denominator))
+      : Number.NaN
+  ));
+  const uclSeries = sigmaSeries.map((sigma) => uBar + 3 * sigma);
+  const lclSeries = sigmaSeries.map((sigma) => clampLowerLimit(uBar - 3 * sigma));
+  const finiteUcls = uclSeries.filter(Number.isFinite);
+  const finiteLcls = lclSeries.filter(Number.isFinite);
+
+  return {
+    ucl: finiteUcls.length ? calculateMean(finiteUcls) : Number.NaN,
+    lcl: finiteLcls.length ? calculateMean(finiteLcls) : Number.NaN,
+    centerLine: uBar,
+    sigma: calculateMean(sigmaSeries.filter(Number.isFinite)),
+    uclSeries,
+    lclSeries,
+    sigmaSeries,
+    denominatorSeries,
+    chartValues,
   };
 };
 
@@ -261,16 +512,25 @@ export const computeXbarRComponents = (values: number[], sampleSize: number) => 
 export const calculateEWMALimits = (data: number[], lambda = 0.2): ControlLimits => {
   const mean = calculateMean(data);
   const sigma = calculateStandardDeviation(data);
+  const ewmaValues = calculateEWMAValues(data, lambda);
   
-  // For EWMA, control limits vary by point
-  // These are the asymptotic limits
-  const asymptotic_factor = Math.sqrt(lambda / (2 - lambda));
+  const sigmaSeries = data.map((_, index) => {
+    const factor = Math.sqrt((lambda / (2 - lambda)) * (1 - ((1 - lambda) ** (2 * (index + 1)))));
+    return sigma * factor;
+  });
+  const uclSeries = sigmaSeries.map((pointSigma) => mean + 3 * pointSigma);
+  const lclSeries = sigmaSeries.map((pointSigma) => mean - 3 * pointSigma);
+  const asymptoticFactor = Math.sqrt(lambda / (2 - lambda));
   
   return {
-    ucl: mean + 3 * sigma * asymptotic_factor,
-    lcl: mean - 3 * sigma * asymptotic_factor,
+    ucl: mean + 3 * sigma * asymptoticFactor,
+    lcl: mean - 3 * sigma * asymptoticFactor,
     centerLine: mean,
-    sigma
+    sigma,
+    uclSeries,
+    lclSeries,
+    sigmaSeries,
+    chartValues: ewmaValues,
   };
 };
 
@@ -311,20 +571,29 @@ export const calculateControlLimits = (
   data: DataPoint[], 
   column: string, 
   chartType: ChartType,
-  sampleSize: number
+  sampleSize: number,
+  denominatorColumn?: string | null
 ): ControlLimits => {
   // Extract numerical data from the specified column
-  const numericData = data.map(row => parseFloat(row[column])).filter(val => !isNaN(val));
+  const numericData = numericValuesFromRows(data, column);
+  const numericSeries = numericSeriesFromRows(data, column);
+  const denominators = positiveDenominatorsFromRows(data, denominatorColumn);
   
   switch (chartType) {
     case 'individual':
       return calculateIndividualControlLimits(numericData);
       
     case 'pChart':
-      return calculatePChartLimits(numericData, sampleSize);
+      return calculatePChartLimits(numericSeries, sampleSize, denominators);
       
     case 'npChart':
       return calculateNPChartLimits(numericData, sampleSize);
+
+    case 'cChart':
+      return calculateCChartLimits(numericData);
+
+    case 'uChart':
+      return calculateUChartLimits(numericSeries, sampleSize, denominators);
       
     case 'xBarS': {
       // Group data into subgroups of size sampleSize

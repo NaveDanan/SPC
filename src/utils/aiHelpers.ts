@@ -79,6 +79,7 @@ export const summarizeDatasetForAi = (
   processedData: ProcessedData | null,
   selectedColumns: string[],
   xAxisColumn: string | null,
+  denominatorColumn: string | null,
   sampleSize: number
 ): string | null => {
   if (!dataSet) {
@@ -95,6 +96,7 @@ export const summarizeDatasetForAi = (
   const selected = selectedColumns.length ? selectedColumns.join(', ') : 'none';
   summary.push(`Selected Y column(s): ${selected}`);
   summary.push(`X-axis column: ${xAxisColumn ?? 'row index (implicit)'}`);
+  summary.push(`Denominator/opportunities column: ${denominatorColumn ?? 'none'}`);
   summary.push(`Preferred subgroup/sample size: ${sampleSize}`);
   summary.push(`Column overview: ${describeColumns(dataSet)}`);
 
@@ -104,6 +106,21 @@ export const summarizeDatasetForAi = (
       `Preliminary stats for primary column: mean=${stats.mean.toPrecision(6)}, σ=${stats.standardDeviation.toPrecision(6)}, min=${stats.min.toPrecision(6)}, max=${stats.max.toPrecision(6)}, count=${stats.count}`
     );
     summary.push(`Detected Western Electric rule signals: ${processedData.ruleViolations.length}`);
+    if (processedData.dataProfile) {
+      const profile = processedData.dataProfile;
+      summary.push(
+        `SPC data profile: kind=${profile.dataKind}, numeric=${profile.numericCount}/${profile.rowCount}, missing=${profile.missingCount}, nonNumeric=${profile.nonNumericCount}, skew=${profile.skewness?.toPrecision(4) ?? 'n/a'}, lag1=${profile.lag1Autocorrelation?.toPrecision(4) ?? 'n/a'}, timeOrdered=${profile.timeOrdered}`
+      );
+    }
+    if (processedData.diagnostics?.length) {
+      summary.push(`SPC diagnostics: ${processedData.diagnostics.map((item) => `${item.severity}:${item.code}`).join(', ')}`);
+    }
+    if (processedData.chartRecommendations?.length) {
+      summary.push(`Top chart candidates: ${processedData.chartRecommendations.slice(0, 3).map((item) => `${item.chartType} (${item.status})`).join(', ')}`);
+    }
+    if (processedData.capabilityStatus) {
+      summary.push(`Capability readiness: ${processedData.capabilityStatus.readiness}; ${processedData.capabilityStatus.reasons.join(' ')}`);
+    }
   }
 
   summary.push('Sample rows (first rows only):');
@@ -137,7 +154,7 @@ Additional Agent Mode tool requirement:
     return `
 אתה יועץ מנוסה בבקרת תהליכים סטטיסטית (SPC).
 נתח נתוני ייצור, בריאות ושירות כדי להמליץ על תרשימי בקרה מתאימים.
-שקול האם הנתונים מייצגים מדידות בודדות, מדידות מקובצות, נתוני תכונה (עבר/נכשל, ספירות), או פרופורציות.
+שקול האם הנתונים מייצגים מדידות בודדות, מדידות מקובצות, נתוני תכונה (עבר/נכשל, ספירות פגמים C/U), או פרופורציות P/NP.
 כאשר משתמש מספק הקשר, המלץ על סוג/י התרשים המובילים והסבר מדוע.
 הדגש הנחות נדרשות, גדלי תת-קבוצות, וכל עיבוד מקדים נדרש.
 אם חסר מידע, שאל שאלות הבהרה תמציתיות לפני שמתחייב להמלצת תרשים.
@@ -155,7 +172,7 @@ ${agentModeInstructionHe}
   return `
 You are an experienced Statistical Process Control (SPC) consultant.
 Analyse manufacturing, healthcare, and service process data to recommend appropriate control charts.
-Consider whether the data represents individual measurements, subgrouped measurements, attribute data (pass/fail, counts), or proportions.
+Consider whether the data represents individual measurements, subgrouped measurements, attribute data (pass/fail, C/U defect counts), or P/NP proportions/counts.
 When a user provides context, recommend the top chart type(s) and explain why.
 Highlight required assumptions, subgroup sizes, and any preprocessing needed.
 If information is missing, ask concise clarifying questions before committing to a chart recommendation.
@@ -246,9 +263,11 @@ ${summary}
 - chartType
 - yColumns (עמודה אחת או כמה)
 - xAxisColumn (או null לשימוש באינדקס שורה)
+- denominatorColumn עבור תרשימי P/U כאשר יש מכנה
 - sampleSize
 
 החזר גם נימוק קצר.
+קרא אבחונים לפני שינוי משפחת תרשימים, בחירת P/U/C, או דיון ביכולת תהליך.
 `;
   }
 
@@ -261,6 +280,7 @@ ${summary}
 Current selection: ${friendlyName}.
 
 Use the available tools to inspect current controls when needed and apply the right SPC UI changes.
+Read diagnostics before changing chart families, choosing P/U/C charts, or discussing capability.
 After any tool calls, return a short explanation of what you changed and why.
 `;
 };

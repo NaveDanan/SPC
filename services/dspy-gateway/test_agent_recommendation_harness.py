@@ -130,7 +130,7 @@ class SPCAgentToolsAndKnowledgeTest(unittest.TestCase):
         harness = SPCAgentHarness()
         names = [tool.name for tool in harness.tool_metadata]
 
-        self.assertEqual(names, ["list-tools", "read_controls", "update_controls"])
+        self.assertEqual(names, ["list-tools", "read_controls", "read_spc_diagnostics", "update_controls"])
         for tool in harness.tool_metadata:
             self.assertTrue(tool.markdown.startswith("# "))
             self.assertIn("Purpose:", tool.markdown)
@@ -161,6 +161,40 @@ class SPCAgentToolsAndKnowledgeTest(unittest.TestCase):
         self.assertEqual(result["patch"]["sampleSize"], 2)
         self.assertIn("yColumns", result["applied"])
 
+    def test_read_spc_diagnostics_returns_processed_profile(self) -> None:
+        request = build_agent_request(processed={
+            "statistics": {"mean": 1.5},
+            "ruleViolationCount": 0,
+            "dataProfile": {"dataKind": "count", "numericCount": 3},
+            "diagnostics": [{"code": "small-baseline", "severity": "warning", "message": "short"}],
+            "chartRecommendations": [{"chartType": "uChart", "score": 92}],
+            "capabilityStatus": {"readiness": "notApplicable"},
+        })
+        harness = SPCAgentHarness()
+        session = SPCAgentToolSession(request, harness.tool_metadata)
+
+        result = json.loads(session.read_spc_diagnostics())
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["diagnostics"]["dataProfile"]["dataKind"], "count")
+        self.assertEqual(result["diagnostics"]["chartRecommendations"][0]["chartType"], "uChart")
+
+    def test_update_controls_blocks_p_chart_counts_without_denominator(self) -> None:
+        request = build_agent_request(processed={
+            "statistics": {"mean": 4},
+            "ruleViolationCount": 0,
+            "dataProfile": {"dataKind": "count"},
+            "diagnostics": [],
+            "chartRecommendations": [{"chartType": "cChart", "score": 92}],
+        })
+        harness = SPCAgentHarness()
+        session = SPCAgentToolSession(request, harness.tool_metadata)
+
+        result = json.loads(session.update_controls(chartType="pChart", yColumns=["A"]))
+
+        self.assertNotIn("chartType", result["patch"])
+        self.assertIn("chartType", result["skipped"])
+
     def test_update_controls_skips_invalid_columns(self) -> None:
         harness = SPCAgentHarness()
         session = SPCAgentToolSession(build_agent_request(), harness.tool_metadata)
@@ -178,6 +212,7 @@ class SPCAgentToolsAndKnowledgeTest(unittest.TestCase):
         self.assertIn("i-mr.md", docs)
         self.assertIn("xbar-r.md", docs)
         self.assertIn("xbar-s.md", docs)
+        self.assertIn("attribute-charts.md", docs)
 
         selection = loader.select(build_agent_request())
         self.assertIn("xbar-r.md", selection.sources)

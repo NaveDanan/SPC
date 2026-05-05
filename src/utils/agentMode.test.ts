@@ -62,6 +62,21 @@ describe('agentMode utilities', () => {
     expect(recommendation?.chartLabel).toBe('I Chart');
   });
 
+  it('extracts denominator column recommendations for U charts', () => {
+    const message = `\`\`\`json
+{"recommendation":{"chartType":"uChart","yColumns":["Defects"],"denominatorColumn":"Opportunities","reason":"Varying opportunity counts"}}
+\`\`\``;
+
+    const recommendation = extractAgentRecommendationFromMessage(message);
+    const validated = validateAgentRecommendationAgainstHeaders(
+      recommendation!,
+      ['Defects', 'Opportunities'],
+    );
+
+    expect(validated.chartType).toBe('uChart');
+    expect(validated.denominatorColumn).toBe('Opportunities');
+  });
+
   it('uses the most actionable recommendation when multiple JSON blocks are present', () => {
     const message = `- Switch to X-bar S
 

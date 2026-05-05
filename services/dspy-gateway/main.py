@@ -233,13 +233,15 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: str | dict[str, object] | None = None
 
 
-ChartTypeName = Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"]
+ChartTypeName = Literal["individual", "pChart", "npChart", "cChart", "uChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"]
 
 
 AGENT_CHART_TYPES = {
     "individual",
     "pChart",
     "npChart",
+    "cChart",
+    "uChart",
     "xBarS",
     "xBarR",
     "ewma",
@@ -252,6 +254,7 @@ class AgentControls(BaseModel):
     chartType: ChartTypeName
     yColumns: list[str] = Field(default_factory=list)
     xAxisColumn: str | None = None
+    denominatorColumn: str | None = None
     sampleSize: int = 5
     effectiveSampleSize: int | None = None
     chartLabel: str | None = None
@@ -284,6 +287,7 @@ class AgentControlPatch(BaseModel):
     chartType: ChartTypeName | None = None
     yColumns: list[str] | None = None
     xAxisColumn: str | None = None
+    denominatorColumn: str | None = None
     sampleSize: int | None = None
     chartLabel: str | None = None
     zAxisLabel: str | None = None
@@ -324,10 +328,11 @@ class KnowledgeSelection(BaseModel):
 
 
 class AgentRecommendationModel(BaseModel):
-    chartType: Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"] | None = None
+    chartType: ChartTypeName | None = None
     yColumns: list[str] = Field(default_factory=list)
     yColumn: str | None = None
     xAxisColumn: str | None = None
+    denominatorColumn: str | None = None
     sampleSize: int | None = None
     chartLabel: str | None = None
     zAxisLabel: str | None = None
@@ -351,8 +356,19 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "include": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["current", "available", "worksheet", "assistant", "dataset", "processed"]},
+                "items": {"type": "string", "enum": ["current", "available", "worksheet", "assistant", "dataset", "processed", "diagnostics"]},
                 "description": "Optional snapshot sections. Omit to return every section.",
+            },
+        },
+    },
+    "read_spc_diagnostics": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "include": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["dataProfile", "diagnostics", "chartRecommendations", "capabilityStatus", "ruleViolationCount"]},
+                "description": "Optional diagnostic sections. Omit to return all SPC diagnostics.",
             },
         },
     },
@@ -363,6 +379,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "chartType": {"type": ["string", "null"], "enum": [*sorted(AGENT_CHART_TYPES), None]},
             "yColumns": {"type": "array", "items": {"type": "string"}},
             "xAxisColumn": {"type": ["string", "null"]},
+            "denominatorColumn": {"type": ["string", "null"]},
             "sampleSize": {"type": ["integer", "null"], "minimum": 2, "maximum": 25},
             "chartLabel": {"type": ["string", "null"]},
             "zAxisLabel": {"type": ["string", "null"]},
@@ -410,7 +427,7 @@ Use this when:
 - The request depends on worksheet or dataset context.
 
 Inputs:
-- `include`: optional list of sections: `current`, `available`, `worksheet`, `assistant`, `dataset`, `processed`.
+- `include`: optional list of sections: `current`, `available`, `worksheet`, `assistant`, `dataset`, `processed`, `diagnostics`.
 
 Returns:
 - A JSON object containing the selected snapshot sections.
@@ -419,18 +436,39 @@ Safety:
 - This tool never changes chart settings.
 - Always use active-sheet headers when choosing columns.
 """,
+    "read_spc_diagnostics": """# read_spc_diagnostics
+
+Purpose: Read SPC data profile, diagnostics, chart candidates, capability readiness, and rule count.
+
+Use this when:
+- You might change chart type based on data structure.
+- You need to know whether P/U denominators, count data, time order, or subgroup assumptions are valid.
+- You need to explain why capability is ready, preliminary, or not applicable.
+
+Inputs:
+- `include`: optional list of sections: `dataProfile`, `diagnostics`, `chartRecommendations`, `capabilityStatus`, `ruleViolationCount`.
+
+Returns:
+- A JSON object containing the selected diagnostic sections from the current processed dataset.
+
+Safety:
+- This tool never changes chart settings.
+- Read this before `update_controls` when assumptions or blockers matter.
+""",
     "update_controls": """# update_controls
 
 Purpose: Propose validated updates to the SPC UI controls.
 
 Use this when:
 - The user asks Agent Mode to apply or configure an SPC chart.
-- You have enough context to choose chart type, Y columns, X axis, sample size, labels, overlays, or color scheme.
+- You have enough context to choose chart type, Y columns, X axis, denominator, sample size, labels, overlays, or color scheme.
+- You have checked diagnostics when changing chart families or choosing attribute/subgrouped charts.
 
 Inputs:
-- `chartType`: one of individual, pChart, npChart, xBarS, xBarR, ewma, histogram, scatterPlot.
+- `chartType`: one of individual, pChart, npChart, cChart, uChart, xBarS, xBarR, ewma, histogram, scatterPlot.
 - `yColumns`: ordered Y-axis columns from active-sheet headers.
 - `xAxisColumn`: active-sheet column or null for implicit row index.
+- `denominatorColumn`: active-sheet denominator/opportunities column or null.
 - `sampleSize`: subgroup size, clamped to 2..25.
 - `chartLabel`, `zAxisLabel`, `yAxisLabel`: optional trimmed labels.
 - Overlay booleans: `showControlLimits`, `showCenterLine`, `showRuleViolations`, `showSigma1`, `showSigma2`, `showSigma3`.
@@ -440,6 +478,7 @@ Inputs:
 Validation:
 - Invalid chart types and missing columns are skipped and reported.
 - For X-bar R/S charts with multiple Y columns, sample size is forced to the number of Y columns.
+- P/U denominator columns must exist in active-sheet headers.
 - Empty labels are ignored.
 
 Returns:
@@ -498,6 +537,20 @@ class SPCKnowledgeLoader:
             selected.append("xbar-r.md")
         if any(marker in lowered for marker in ("xbar-s", "x-bar s", "x bar s", "xbars", "xBarS".lower(), "s chart", "standard deviation")):
             selected.append("xbar-s.md")
+        if any(marker in lowered for marker in ("p chart", "np chart", "c chart", "u chart", "attribute", "defect", "defective", "denominator", "opportunities")):
+            selected.append("attribute-charts.md")
+        if any(marker in lowered for marker in ("capability", "cpk", "ppk", "specification", "lsl", "usl", "cpm")):
+            selected.append("capability-performance.md")
+        if any(marker in lowered for marker in ("chart selection", "choose chart", "recommendation", "data profile", "diagnostic")):
+            selected.append("chart-selection.md")
+        if any(marker in lowered for marker in ("gage", "gauge", "msa", "measurement system", "resolution")):
+            selected.append("measurement-system.md")
+        if any(marker in lowered for marker in ("semiconductor", "wafer", "fab", "metrology", "reticle", "die")):
+            selected.append("semiconductor-playbook.md")
+        if any(marker in lowered for marker in ("aiag", "automotive", "apqp", "ppap", "control plan", "iatf")):
+            selected.append("automotive-core-tools.md")
+        if any(marker in lowered for marker in ("pharma", "cpv", "pat", "cqa", "cpp", "continued process verification")):
+            selected.append("pharma-cpv-pat.md")
 
         return selected
 
@@ -524,7 +577,10 @@ class SPCAgentDecision(dspy.Signature):
     Rules:
     - Use list-tools when available tool capabilities are unclear.
     - Use read_controls before update_controls when current state, headers, or worksheet context matter.
+    - Use read_spc_diagnostics before update_controls when changing chart families, using attribute charts, or discussing capability.
     - Use update_controls for UI changes instead of writing recommendation JSON.
+    - Do not apply P/U charts without a valid denominator or valid proportion/rate context.
+    - Do not imply capability is ready unless capabilityStatus says ready.
     - Keep the final answer short, direct, and user-facing.
     - Ask at most two concise clarifying questions when required information is missing.
     """
@@ -613,6 +669,7 @@ class SPCAgentToolSession:
                     "chartType",
                     "yColumns",
                     "xAxisColumn",
+                    "denominatorColumn",
                     "sampleSize",
                     "chartLabel",
                     "zAxisLabel",
@@ -634,6 +691,17 @@ class SPCAgentToolSession:
             },
             "dataset": self.request.dataset,
             "processed": self.request.processed,
+            "diagnostics": self._diagnostics(),
+        }
+
+    def _diagnostics(self) -> dict[str, Any]:
+        processed = self.request.processed or {}
+        return {
+            "dataProfile": processed.get("dataProfile"),
+            "diagnostics": processed.get("diagnostics") or [],
+            "chartRecommendations": processed.get("chartRecommendations") or [],
+            "capabilityStatus": processed.get("capabilityStatus"),
+            "ruleViolationCount": processed.get("ruleViolationCount", 0),
         }
 
     def list_tools(self) -> str:
@@ -653,6 +721,15 @@ class SPCAgentToolSession:
             selected = {key: snapshot[key] for key in allowed}
         result = {"ok": True, "tool": "read_controls", "snapshot": selected}
         return self._record("read_controls", {"include": include}, result)
+
+    def read_spc_diagnostics(self, include: list[str] | None = None) -> str:
+        diagnostics = self._diagnostics()
+        selected = diagnostics
+        if include:
+            allowed = {key for key in include if key in diagnostics}
+            selected = {key: diagnostics[key] for key in allowed}
+        result = {"ok": True, "tool": "read_spc_diagnostics", "diagnostics": selected}
+        return self._record("read_spc_diagnostics", {"include": include}, result)
 
     def update_controls(self, **kwargs: Any) -> str:
         headers = set(self.request.availableHeaders)
@@ -690,6 +767,37 @@ class SPCAgentToolSession:
                 applied.append("xAxisColumn")
             else:
                 skipped.append("xAxisColumn")
+
+        if "denominatorColumn" in kwargs:
+            denominator = kwargs.get("denominatorColumn")
+            if denominator is None:
+                self.current["denominatorColumn"] = None
+                self.patch["denominatorColumn"] = None
+                applied.append("denominatorColumn")
+            elif isinstance(denominator, str) and denominator in headers:
+                self.current["denominatorColumn"] = denominator
+                self.patch["denominatorColumn"] = denominator
+                applied.append("denominatorColumn")
+            else:
+                skipped.append("denominatorColumn")
+
+        profile = self._diagnostics().get("dataProfile") or {}
+        data_kind = profile.get("dataKind") if isinstance(profile, dict) else None
+        proposed_chart = self.current.get("chartType")
+        if (
+            proposed_chart == "pChart"
+            and not self.current.get("denominatorColumn")
+            and data_kind not in {"proportion", "binary"}
+        ):
+            self.current["chartType"] = self.request.controls.chartType
+            self.patch.pop("chartType", None)
+            applied = [item for item in applied if item != "chartType"]
+            skipped.append("chartType")
+        if proposed_chart in {"npChart", "cChart", "uChart"} and data_kind not in {"count", "binary"}:
+            self.current["chartType"] = self.request.controls.chartType
+            self.patch.pop("chartType", None)
+            applied = [item for item in applied if item != "chartType"]
+            skipped.append("chartType")
 
         selected_columns = self._unique_strings(self.current.get("yColumns"))
         is_xbar = self.current.get("chartType") in {"xBarS", "xBarR"}
@@ -780,9 +888,15 @@ class SPCAgentToolSession:
                 args=TOOL_PARAMETER_SCHEMAS["read_controls"]["properties"],
             ),
             dspy.Tool(
+                self.read_spc_diagnostics,
+                name="read_spc_diagnostics",
+                desc=self.tool_metadata[2].description,
+                args=TOOL_PARAMETER_SCHEMAS["read_spc_diagnostics"]["properties"],
+            ),
+            dspy.Tool(
                 self.update_controls,
                 name="update_controls",
-                desc=self.tool_metadata[2].description,
+                desc=self.tool_metadata[3].description,
                 args=TOOL_PARAMETER_SCHEMAS["update_controls"]["properties"],
             ),
         ]
@@ -803,6 +917,12 @@ class SPCAgentHarness:
                 description="Read current SPC controls, worksheet context, assistant settings, and allowed options.",
                 parameters=TOOL_PARAMETER_SCHEMAS["read_controls"],
                 markdown=TOOL_MARKDOWN["read_controls"],
+            ),
+            ToolMetadata(
+                name="read_spc_diagnostics",
+                description="Read SPC diagnostics, chart candidates, capability readiness, and blockers.",
+                parameters=TOOL_PARAMETER_SCHEMAS["read_spc_diagnostics"],
+                markdown=TOOL_MARKDOWN["read_spc_diagnostics"],
             ),
             ToolMetadata(
                 name="update_controls",
@@ -998,6 +1118,8 @@ class AgentRecommendationHarness:
         sample_size = cls._clamp_sample_size(recommendation_data.get("sampleSize"))
         x_axis_value = recommendation_data.get("xAxisColumn")
         x_axis_column = cls._clean_optional_text(x_axis_value)
+        denominator_value = recommendation_data.get("denominatorColumn")
+        denominator_column = cls._clean_optional_text(denominator_value)
         chart_label = cls._clean_optional_text(recommendation_data.get("chartLabel"))
         z_axis_label = cls._clean_optional_text(recommendation_data.get("zAxisLabel") or recommendation_data.get("xAxisLabel"))
         y_axis_label = cls._clean_optional_text(recommendation_data.get("yAxisLabel"))
@@ -1008,6 +1130,7 @@ class AgentRecommendationHarness:
             yColumns=y_columns,
             yColumn=y_columns[0] if y_columns else y_column_legacy,
             xAxisColumn=x_axis_column,
+            denominatorColumn=denominator_column,
             sampleSize=sample_size,
             chartLabel=chart_label,
             zAxisLabel=z_axis_label,
@@ -1023,6 +1146,8 @@ class AgentRecommendationHarness:
         score += min(len(model.yColumns), 8) * 3
         if model.xAxisColumn is not None:
             score += 1
+        if model.denominatorColumn is not None:
+            score += 2
         if model.sampleSize:
             score += 2
         if model.chartLabel:
@@ -1036,12 +1161,14 @@ class AgentRecommendationHarness:
         return score
 
     @staticmethod
-    def _recover_chart_type(content: str) -> Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"] | None:
+    def _recover_chart_type(content: str) -> ChartTypeName | None:
         lowered = content.lower()
-        chart_patterns: list[tuple[str, Literal["individual", "pChart", "npChart", "xBarS", "xBarR", "ewma", "histogram", "scatterPlot"]]] = [
+        chart_patterns: list[tuple[str, ChartTypeName]] = [
             (r"\bx\s*[- ]?\s*bar\s*s\b|\bxbar\s*s\b|\bx-bar\s*s\b", "xBarS"),
             (r"\bx\s*[- ]?\s*bar\s*r\b|\bxbar\s*r\b|\bx-bar\s*r\b", "xBarR"),
             (r"\bi\s*[- ]?\s*mr\b|\bindividual\b|\bi chart\b", "individual"),
+            (r"\bu\s*chart\b|\bu-chart\b|defects per unit", "uChart"),
+            (r"\bc\s*chart\b|\bc-chart\b|defect count", "cChart"),
             (r"\bp\s*chart\b|\bproportion\b", "pChart"),
             (r"\bnp\s*chart\b", "npChart"),
             (r"\bewma\b", "ewma"),
@@ -1122,6 +1249,7 @@ class AgentRecommendationHarness:
             yColumns=y_columns,
             yColumn=y_columns[0] if y_columns else None,
             xAxisColumn=None,
+            denominatorColumn=None,
             sampleSize=sample_size,
             chartLabel=chart_label,
             zAxisLabel=z_axis_label,

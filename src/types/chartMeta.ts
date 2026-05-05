@@ -100,6 +100,58 @@ export const chartMeta: Record<ChartType, ChartMeta> = {
       }
     ]
   },
+  cChart: {
+    name: 'C Chart',
+    description: 'Tracks defect counts when each sample has the same area of opportunity. Use for counts of defects, not counts of defective units.',
+    strengths: [
+      'Simple defect-count monitoring when opportunity size is constant',
+      'Uses the Poisson model for counts per inspection unit',
+      'Easy to explain for visual inspection and defectivity reviews'
+    ],
+    weaknesses: [
+      'Requires constant inspection area or opportunity size',
+      'Not appropriate for varying sample sizes',
+      'Low-count processes may need rare-event methods'
+    ],
+    dataExpectations: [
+      'Non-negative integer defect counts',
+      'Constant inspection area, unit, or opportunity window',
+      'Consistent inspection method and defect definition'
+    ],
+    exampleUseCases: [
+      {
+        title: 'Particles per Wafer Scan',
+        scenario: 'Monitor total particles found in a fixed-area wafer inspection recipe.',
+        whyUseful: 'Detects excursions in contamination while keeping the opportunity base constant.'
+      }
+    ]
+  },
+  uChart: {
+    name: 'U Chart',
+    description: 'Tracks defects per unit when the inspected opportunity size varies. Limits adjust point by point using the denominator.',
+    strengths: [
+      'Handles variable sample size or inspected area',
+      'Normalizes defect counts into defects per unit',
+      'Pointwise limits avoid overreacting to large or small denominators'
+    ],
+    weaknesses: [
+      'Requires a trustworthy denominator for every plotted point',
+      'Assumes roughly Poisson defect behavior',
+      'Can be confused with P charts for defective-unit rates'
+    ],
+    dataExpectations: [
+      'Non-negative integer defect counts',
+      'Positive denominator column such as units, wafers, area, or opportunities',
+      'Stable inspection criteria over time'
+    ],
+    exampleUseCases: [
+      {
+        title: 'Defects per Reticle Field',
+        scenario: 'Track defects while the number of inspected fields varies by lot or product.',
+        whyUseful: 'Separates true defectivity shifts from changing inspection volume.'
+      }
+    ]
+  },
   xBarS: {
     name: 'X-bar S Chart',
     description: 'Monitors both the subgroup mean (X-bar) and standard deviation (S) for continuous data with moderate subgroup sizes (n ≥ 4). Suitable when within-subgroup variation matters.',

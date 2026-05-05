@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ChartType, DataSet, ProcessedData, ChartOptions, Sheet, DataSelectionRange } from '../types/DataTypes';
-import { calculateControlLimits } from '../utils/spcCalculations';
+import { calculateCapabilityStatus, calculateControlLimits } from '../utils/spcCalculations';
 import { detectRuleViolations } from '../utils/westernElectricRules';
+import { buildSpcDiagnostics } from '../utils/spcDiagnostics';
 
 interface AppContextType {
   rawData: DataSet | null;
@@ -23,6 +24,8 @@ interface AppContextType {
   setSelectedColumns: (columns: string[]) => void;
   xAxisColumn: string | null;
   setXAxisColumn: (col: string | null) => void;
+  denominatorColumn: string | null;
+  setDenominatorColumn: (col: string | null) => void;
   selectedDataRange: DataSelectionRange | null;
   setSelectedDataRange: (range: DataSelectionRange | null) => void;
   sampleSize: number;
@@ -38,6 +41,7 @@ const defaultChartOptions: ChartOptions = {
   yAxisLabel: 'Value',
   lowerSpecLimit: null,
   upperSpecLimit: null,
+  targetValue: null,
   showControlLimits: true,
   showCenterLine: true,
   showRuleViolations: true,
@@ -57,6 +61,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [xAxisColumn, setXAxisColumn] = useState<string | null>(null);
+  const [denominatorColumn, setDenominatorColumn] = useState<string | null>(null);
   const [selectedDataRange, setSelectedDataRange] = useState<DataSelectionRange | null>(null);
   const [sampleSize, setSampleSize] = useState<number>(5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,12 +72,24 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     if (rawData && selectedColumns.length > 0) {
       processData();
     }
-  }, [rawData, selectedColumns, selectedChartType, sampleSize, selectedDataRange, xAxisColumn]);
+  }, [
+    rawData,
+    selectedColumns,
+    selectedChartType,
+    sampleSize,
+    selectedDataRange,
+    xAxisColumn,
+    denominatorColumn,
+    chartOptions.lowerSpecLimit,
+    chartOptions.upperSpecLimit,
+    chartOptions.targetValue,
+  ]);
 
   useEffect(() => {
     if (!rawData) {
       if (selectedColumns.length > 0) setSelectedColumns([]);
       if (xAxisColumn !== null) setXAxisColumn(null);
+      if (denominatorColumn !== null) setDenominatorColumn(null);
       return;
     }
 
@@ -85,7 +102,10 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     if (xAxisColumn && !availableHeaders.has(xAxisColumn)) {
       setXAxisColumn(null);
     }
-  }, [rawData, selectedColumns, xAxisColumn]);
+    if (denominatorColumn && !availableHeaders.has(denominatorColumn)) {
+      setDenominatorColumn(null);
+    }
+  }, [rawData, selectedColumns, xAxisColumn, denominatorColumn]);
 
   const processData = async () => {
     if (!rawData || selectedColumns.length === 0) return;
@@ -117,9 +137,12 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
       }
 
       const xAxisInRange = xAxisColumn && rangeHeaders.includes(xAxisColumn) ? xAxisColumn : null;
-      const projectionColumns = xAxisInRange
-        ? Array.from(new Set([...effectiveSelectedColumns, xAxisInRange]))
-        : effectiveSelectedColumns;
+      const denominatorInRange = denominatorColumn && rangeHeaders.includes(denominatorColumn) ? denominatorColumn : null;
+      const projectionColumns = Array.from(new Set([
+        ...effectiveSelectedColumns,
+        ...(xAxisInRange ? [xAxisInRange] : []),
+        ...(denominatorInRange ? [denominatorInRange] : []),
+      ]));
 
       const scopedRows = rawData.data.slice(rowStart, rowEnd + 1);
 
@@ -138,11 +161,23 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         return;
       }
 
+      const selectedColumn = effectiveSelectedColumns[0];
+      const diagnosticsResult = buildSpcDiagnostics({
+        rows: filteredData,
+        column: selectedColumn,
+        denominatorColumn: denominatorInRange,
+        xAxisColumn: xAxisInRange,
+        chartType: selectedChartType,
+        sampleSize: effectiveSampleSize,
+        selectedColumns: effectiveSelectedColumns,
+      });
+
       // Calculate control limits based on the chart type
-      const controlLimits = calculateControlLimits(filteredData, effectiveSelectedColumns[0], selectedChartType, effectiveSampleSize);
+      const controlLimits = calculateControlLimits(filteredData, selectedColumn, selectedChartType, effectiveSampleSize, denominatorInRange);
 
       // Detect rule violations — align series with chart type semantics
       let violations;
+      let chartedValuesForStats = controlLimits.chartValues?.filter(Number.isFinite) ?? [];
       if (selectedChartType === 'xBarR' || selectedChartType === 'xBarS') {
         // Build the X-bar series (subgroup means), matching chart logic
         const means: number[] = [];
@@ -161,7 +196,7 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
           });
         } else {
           // Single-column sequential subgrouping
-          const values = filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]])).filter(v => !isNaN(v));
+          const values = filteredData.map(row => parseFloat(String(row[selectedColumn]))).filter(v => !isNaN(v));
           for (let i = 0; i < values.length; i += effectiveSampleSize) {
             const group = values.slice(i, i + effectiveSampleSize);
             if (group.length === effectiveSampleSize) {
@@ -180,10 +215,35 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         } as any;
         const series = means.map(v => ({ v }));
         violations = detectRuleViolations(series as any, 'v', xbarControl);
+        chartedValuesForStats = means;
+      } else if (controlLimits.chartValues?.length) {
+        const series = controlLimits.chartValues.map(v => ({ v }));
+        violations = detectRuleViolations(series as any, 'v', controlLimits);
       } else {
         // Default behavior (Individuals, p, np, ewma, etc.)
-        violations = detectRuleViolations(filteredData, effectiveSelectedColumns[0], controlLimits);
+        violations = detectRuleViolations(filteredData, selectedColumn, controlLimits);
+        chartedValuesForStats = filteredData.map(row => parseFloat(String(row[selectedColumn]))).filter(Number.isFinite);
       }
+
+      const capabilityStatus = calculateCapabilityStatus(
+        diagnosticsResult.numericValues,
+        controlLimits.centerLine,
+        controlLimits.sigma,
+        {
+          lowerSpecLimit: chartOptions.lowerSpecLimit,
+          upperSpecLimit: chartOptions.upperSpecLimit,
+          targetValue: chartOptions.targetValue,
+        },
+        {
+          chartType: selectedChartType,
+          dataProfile: diagnosticsResult.profile,
+          ruleViolations: violations,
+        },
+      );
+
+      const finiteStatsValues = chartedValuesForStats.length
+        ? chartedValuesForStats
+        : diagnosticsResult.numericValues;
 
       setProcessedData({
         data: filteredData,
@@ -192,10 +252,14 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
         statistics: {
           mean: controlLimits.centerLine,
           standardDeviation: controlLimits.sigma,
-          min: Math.min(...filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]]))),
-          max: Math.max(...filteredData.map(row => parseFloat(row[effectiveSelectedColumns[0]]))),
-          count: filteredData.length,
-        }
+          min: finiteStatsValues.length ? Math.min(...finiteStatsValues) : Number.NaN,
+          max: finiteStatsValues.length ? Math.max(...finiteStatsValues) : Number.NaN,
+          count: finiteStatsValues.length,
+        },
+        dataProfile: diagnosticsResult.profile,
+        diagnostics: diagnosticsResult.diagnostics,
+        chartRecommendations: diagnosticsResult.recommendations,
+        capabilityStatus,
       });
     } catch (error) {
       console.error('Error processing data:', error);
@@ -209,6 +273,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     setRawData(null);
     setProcessedData(null);
     setSelectedColumns([]);
+    setXAxisColumn(null);
+    setDenominatorColumn(null);
     setSelectedDataRange(null);
     setErrorMessage(null);
   };
@@ -304,6 +370,8 @@ export const AppContextProvider: React.FC<{ children: ReactNode }> = ({ children
     setSelectedColumns,
     xAxisColumn,
     setXAxisColumn,
+    denominatorColumn,
+    setDenominatorColumn,
     selectedDataRange,
     setSelectedDataRange,
     sampleSize,

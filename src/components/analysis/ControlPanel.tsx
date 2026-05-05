@@ -17,16 +17,19 @@ const ControlPanel: React.FC = () => {
     setSelectedColumns,
     xAxisColumn,
     setXAxisColumn,
+    denominatorColumn,
+    setDenominatorColumn,
     sampleSize,
     setSampleSize,
   } = useAppContext();
   const { t } = useLanguage();
   const [customizationOpen, setCustomizationOpen] = useState(false);
   const isXbarChart = selectedChartType === 'xBarS' || selectedChartType === 'xBarR';
+  const usesDenominator = selectedChartType === 'pChart' || selectedChartType === 'uChart';
   const effectiveSampleSize = isXbarChart && selectedColumns.length > 1
     ? selectedColumns.length
     : sampleSize;
-  const updateSpecLimit = (key: 'lowerSpecLimit' | 'upperSpecLimit', value: string) => {
+  const updateNumericChartOption = (key: 'lowerSpecLimit' | 'upperSpecLimit' | 'targetValue', value: string) => {
     const trimmedValue = value.trim();
     const numericValue = Number(trimmedValue);
     setChartOptions({
@@ -40,6 +43,8 @@ const ControlPanel: React.FC = () => {
     { value: 'individual', label: 'Individual (I) Chart' },
     { value: 'pChart', label: 'P Chart (Proportion)' },
     { value: 'npChart', label: 'NP Chart (Number of Defects)' },
+    { value: 'cChart', label: 'C Chart (Defects)' },
+    { value: 'uChart', label: 'U Chart (Defects per Unit)' },
     { value: 'xBarS', label: 'X-bar S Chart' },
     { value: 'xBarR', label: 'X-bar R Chart' },
     { value: 'ewma', label: 'EWMA Chart' },
@@ -157,7 +162,7 @@ const ControlPanel: React.FC = () => {
                 step="any"
                 className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
                 value={chartOptions.lowerSpecLimit ?? ''}
-                onChange={(event) => updateSpecLimit('lowerSpecLimit', event.target.value)}
+                onChange={(event) => updateNumericChartOption('lowerSpecLimit', event.target.value)}
                 disabled={!isDataLoaded}
               />
             </div>
@@ -171,10 +176,48 @@ const ControlPanel: React.FC = () => {
                 step="any"
                 className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
                 value={chartOptions.upperSpecLimit ?? ''}
-                onChange={(event) => updateSpecLimit('upperSpecLimit', event.target.value)}
+                onChange={(event) => updateNumericChartOption('upperSpecLimit', event.target.value)}
                 disabled={!isDataLoaded}
               />
             </div>
+          </div>
+
+          {usesDenominator && (
+            <div>
+              <label htmlFor="denominator-column" className="block text-sm font-medium text-gray-700 mb-1">
+                {t('controlPanel.denominatorColumn')}
+              </label>
+              <select
+                id="denominator-column"
+                className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                value={denominatorColumn || ''}
+                onChange={(event) => setDenominatorColumn(event.target.value || null)}
+                disabled={!isDataLoaded}
+              >
+                <option value="">{t('controlPanel.fixedSampleSize')}</option>
+                {rawData.headers.map((header) => (
+                  <option key={header} value={header}>
+                    {header}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">{t('controlPanel.denominatorHint')}</p>
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="target-value" className="block text-sm font-medium text-gray-700 mb-1">
+              {t('controlPanel.targetValue')}
+            </label>
+            <input
+              id="target-value"
+              type="number"
+              step="any"
+              className="w-full rounded-md border border-gray-300 shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+              value={chartOptions.targetValue ?? ''}
+              onChange={(event) => updateNumericChartOption('targetValue', event.target.value)}
+              disabled={!isDataLoaded}
+            />
           </div>
         </div>
       )}

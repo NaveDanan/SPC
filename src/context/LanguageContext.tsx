@@ -42,6 +42,8 @@ const translations: Record<Language, Record<string, string>> = {
     'chart.xBarS': 'X-bar S',
     'chart.pChart': 'P Chart',
     'chart.npChart': 'NP Chart',
+    'chart.cChart': 'C Chart',
+    'chart.uChart': 'U Chart',
     'chart.ewma': 'EWMA',
     'chart.histogram': 'Histogram',
     'chart.scatter': 'Scatter Plot',
@@ -118,6 +120,10 @@ const translations: Record<Language, Record<string, string>> = {
     'controlPanel.yAxisLabel': 'Y-Axis Label',
     'controlPanel.lowerSpecLimit': 'Lower Spec Limit (LSL)',
     'controlPanel.upperSpecLimit': 'Upper Spec Limit (USL)',
+    'controlPanel.targetValue': 'Target Value (optional)',
+    'controlPanel.denominatorColumn': 'Denominator / Opportunities Column',
+    'controlPanel.fixedSampleSize': 'Use fixed sample size',
+    'controlPanel.denominatorHint': 'For P/U charts, use counts in Y and units/opportunities in this column.',
     'controlPanel.displayOptions': 'Display Options',
     'controlPanel.showControlLimits': 'Show Control Limits',
     'controlPanel.showCenterLine': 'Show Center Line',
@@ -137,6 +143,7 @@ const translations: Record<Language, Record<string, string>> = {
     'chartPanel.cpl': 'Cpl',
     'chartPanel.cpu': 'Cpu',
     'chartPanel.cpk': 'Cpk',
+    'chartPanel.capabilityPerformance': 'Capability & Performance',
     
     // Data Preview
     'dataPreview.title': 'Data Preview',
@@ -168,6 +175,8 @@ const translations: Record<Language, Record<string, string>> = {
     'ruleViolations.ucl': 'Upper Control Limit:',
     'ruleViolations.lcl': 'Lower Control Limit:',
     'ruleViolations.westernRules': 'Western Electric Rules',
+    'ruleViolations.diagnostics': 'SPC Diagnostics',
+    'ruleViolations.recommendations': 'Recommended Chart Candidates',
   },
   he: {
     // Header
@@ -199,6 +208,8 @@ const translations: Record<Language, Record<string, string>> = {
     'chart.xBarS': 'X-bar S',
     'chart.pChart': 'תרשים P',
     'chart.npChart': 'תרשים NP',
+    'chart.cChart': 'תרשים C',
+    'chart.uChart': 'תרשים U',
     'chart.ewma': 'EWMA',
     'chart.histogram': 'היסטוגרמה',
     'chart.scatter': 'תרשים פיזור',
@@ -275,6 +286,10 @@ const translations: Record<Language, Record<string, string>> = {
     'controlPanel.yAxisLabel': 'תווית ציר Y',
     'controlPanel.lowerSpecLimit': 'LSL',
     'controlPanel.upperSpecLimit': 'USL',
+    'controlPanel.targetValue': 'ערך יעד (אופציונלי)',
+    'controlPanel.denominatorColumn': 'עמודת מכנה / הזדמנויות',
+    'controlPanel.fixedSampleSize': 'השתמש בגודל מדגם קבוע',
+    'controlPanel.denominatorHint': 'בתרשימי P/U השתמש בספירות בעמודת Y וביחידות/הזדמנויות בעמודה זו.',
     'controlPanel.displayOptions': 'אפשרויות תצוגה',
     'controlPanel.showControlLimits': 'הצג גבולות בקרה',
     'controlPanel.showCenterLine': 'הצג קו מרכז',
@@ -294,6 +309,7 @@ const translations: Record<Language, Record<string, string>> = {
     'chartPanel.cpl': 'Cpl',
     'chartPanel.cpu': 'Cpu',
     'chartPanel.cpk': 'Cpk',
+    'chartPanel.capabilityPerformance': 'יכולת וביצועי תהליך',
     
     // Data Preview
     'dataPreview.title': 'תצוגה מקדימה של נתונים',
@@ -325,6 +341,8 @@ const translations: Record<Language, Record<string, string>> = {
     'ruleViolations.ucl': 'גבול בקרה עליון:',
     'ruleViolations.lcl': 'גבול בקרה תחתון:',
     'ruleViolations.westernRules': 'כללי Western Electric',
+    'ruleViolations.diagnostics': 'אבחוני SPC',
+    'ruleViolations.recommendations': 'מועמדי תרשים מומלצים',
   },
 };
 

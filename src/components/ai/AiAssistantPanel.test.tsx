@@ -5,6 +5,7 @@ import AiAssistantPanel from './AiAssistantPanel';
 const setSelectedChartType = vi.fn();
 const setSelectedColumns = vi.fn();
 const setXAxisColumn = vi.fn();
+const setDenominatorColumn = vi.fn();
 const setSampleSize = vi.fn();
 const setChartOptions = vi.fn();
 const fetchMock = vi.fn();
@@ -51,6 +52,7 @@ const appContextMock: any = {
   processedData: null,
   selectedColumns: ['A'],
   xAxisColumn: null,
+  denominatorColumn: null,
   sampleSize: 3,
   selectedChartType: 'individual',
   chartOptions: {
@@ -69,6 +71,7 @@ const appContextMock: any = {
   setChartOptions,
   setSelectedColumns,
   setXAxisColumn,
+  setDenominatorColumn,
   setSampleSize,
   setActiveSheetIndex: vi.fn(),
 };
@@ -105,6 +108,7 @@ describe('AiAssistantPanel Agent Mode', () => {
     };
     appContextMock.selectedColumns = ['A'];
     appContextMock.xAxisColumn = null;
+    appContextMock.denominatorColumn = null;
     appContextMock.sampleSize = 3;
     appContextMock.selectedChartType = 'individual';
     appContextMock.chartOptions = {
@@ -240,7 +244,44 @@ describe('AiAssistantPanel Agent Mode', () => {
     expect(fetchMock.mock.calls[1][0]).toContain('/v1/agent/turn');
     expect(agentRequest.tools).toBeUndefined();
     expect(agentRequest.controls.chartType).toBe('individual');
+    expect(agentRequest.controls.denominatorColumn).toBeNull();
     expect(agentRequest.availableHeaders).toEqual(['A', 'B', 'Date']);
     expect(agentRequest.dataset.previewRows).toHaveLength(2);
+  });
+
+  it('applies denominator column patches for attribute charts', async () => {
+    fetchMock.mockReset();
+    appContextMock.rawData = {
+      data: [
+        { Defects: 3, Opportunities: 100, Date: '2024-01-01' },
+        { Defects: 5, Opportunities: 120, Date: '2024-01-02' },
+      ],
+      headers: ['Defects', 'Opportunities', 'Date'],
+      fileName: 'defects.xlsx',
+      fileType: 'xlsx',
+      sheets: [{ name: 'Sheet1', data: [{ Defects: 3, Opportunities: 100, Date: '2024-01-01' }], headers: ['Defects', 'Opportunities', 'Date'] }],
+      activeSheetIndex: 0,
+    };
+    appContextMock.selectedColumns = ['Defects'];
+
+    fetchMock
+      .mockResolvedValueOnce(chatResponse('- Initial chart recommendation.'))
+      .mockResolvedValueOnce(agentResponse('- Applied U chart settings.', {
+        chartType: 'uChart',
+        yColumns: ['Defects'],
+        denominatorColumn: 'Opportunities',
+        xAxisColumn: 'Date',
+      }));
+
+    render(<AiAssistantPanel onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { pressed: false }));
+
+    await waitFor(() => {
+      expect(setSelectedChartType).toHaveBeenCalledWith('uChart');
+      expect(setSelectedColumns).toHaveBeenCalledWith(['Defects']);
+      expect(setDenominatorColumn).toHaveBeenCalledWith('Opportunities');
+      expect(setXAxisColumn).toHaveBeenCalledWith('Date');
+    });
   });
 });
